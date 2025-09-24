@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "OpenWhen",
+  "version": "0.1",
+  "description": "open urls on a schedule or once and show a short reminder message",
+  "permissions": [
+    "storage",
+    "alarms",
+    "tabs",
+    "windows",
+    "notifications",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content_script.js"],
+      "css": ["banner.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "styles.css",
+        "icons/icon16.png",
+        "icons/icon32.png",
+        "icons/icon48.png",
+        "icons/icon128.png",
+        "icons/icon.png",
+        "icons/notification.svg"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

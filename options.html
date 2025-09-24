@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>OpenWhen — options</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main>
+  <h1><img src="icons/icon48.png" alt="OpenWhen" class="app-icon">OpenWhen</h1>
+    <section>
+      <h2>settings</h2>
+    </section>
+    <form id="addForm">
+      <label class="label-inline">url
+        <input type="text" id="url" placeholder="https://example.com or example.com" required>
+      </label>
+
+      <label>open in
+        <select id="openIn">
+          <option value="tab">new tab</option>
+          <option value="window">new window</option>
+        </select>
+        <label style="display:inline-block;margin-left:8px;font-size:12px;text-transform:none">
+          <input type="checkbox" id="openInBackground">
+          background
+        </label>
+      </label>
+
+      <label>mode
+        <select id="mode">
+          <option value="once">once</option>
+          <option value="daily">daily</option>
+          <option value="weekly">weekly</option>
+          <option value="monthly">monthly</option>
+        </select>
+      </label>
+
+      <div id="onceFields">
+        <label>date & time
+          <input type="datetime-local" id="when">
+        </label>
+      </div>
+
+      <div id="recurringFields" hidden>
+        <label>time
+          <input type="time" id="time">
+        </label>
+        <label id="stopAfterLabel">stop after
+          <input type="number" id="stopAfter" min="1" placeholder="times (optional)">
+        </label>
+        <div id="monthlyFields" hidden>
+          <label>day of month
+            <input type="number" id="monthDay" min="1" max="31" placeholder="1-31">
+          </label>
+        </div>
+        <div id="weeklyDays" hidden>
+          <label><input type="checkbox" value="0"> sunday</label>
+          <label><input type="checkbox" value="1"> monday</label>
+          <label><input type="checkbox" value="2"> tuesday</label>
+          <label><input type="checkbox" value="3"> wednesday</label>
+          <label><input type="checkbox" value="4"> thursday</label>
+          <label><input type="checkbox" value="5"> friday</label>
+          <label><input type="checkbox" value="6"> saturday</label>
+        </div>
+      </div>
+
+      <label>optional message
+        <input type="text" id="message" placeholder="reminder message (optional)">
+      </label>
+
+      <div class="actions">
+        <button type="submit">add schedule</button>
+      </div>
+    </form>
+
+    <section>
+      <h2>schedules
+        <label style="margin-left:12px;font-size:12px;text-transform:none;">
+          order by
+          <select id="orderBy">
+            <option value="created">created</option>
+            <option value="next">next trigger time</option>
+            <option value="times">times triggered</option>
+          </select>
+        </label>
+      </h2>
+      <ul id="schedulesList"></ul>
+    </section>
+  </main>
+  <script src="options.js"></script>
+</body>
+</html>

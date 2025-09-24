@@ -1,0 +1,32 @@
+/* minimal banner styles injected into pages by content script */
+.openwhen-banner{
+  position:fixed;
+  top:0;
+  left:0;
+  right:0;
+  background:rgba(45,124,255,0.95);
+  color:#fff;
+  padding:10px 14px;
+  font-family:system-ui, -apple-system, 'Segoe UI', Roboto, Arial;
+  font-size:13px;
+  z-index:2147483647;
+  box-shadow:0 2px 8px rgba(0,0,0,0.2);
+  text-transform:none;
+  display:flex;
+  align-items:flex-start;
+  gap:12px;
+}
+.openwhen-banner .openwhen-content{flex:1}
+.openwhen-banner strong{display:block}
+.openwhen-close-btn{
+  background:transparent;
+  border:none;
+  color:#fff;
+  font-size:18px;
+  cursor:pointer;
+  padding:4px 8px;
+  line-height:1;
+}
+
+/* set a CSS variable to allow pages that opt-in to reserve space */
+:root{ --openwhen-banner-height: 0px; }
