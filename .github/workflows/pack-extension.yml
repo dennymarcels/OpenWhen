@@ -6,6 +6,11 @@ on:
     tags: ['v*']
   workflow_dispatch: {}
 
+permissions:
+  contents: write
+  packages: write
+  issues: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -40,16 +45,6 @@ jobs:
         with:
           name: openwhen-zip
           path: dist
-      - name: Create GitHub Release
-        id: create_release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
-          body: |
-            ${{ steps.release_body.outputs.body }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Determine release body
         id: release_body
         run: |
@@ -61,6 +56,16 @@ jobs:
           echo "body<<EOF" >> $GITHUB_OUTPUT
           echo "$body" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body: |
+            ${{ steps.release_body.outputs.body }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Upload release asset
         uses: actions/upload-release-asset@v1
         with:
