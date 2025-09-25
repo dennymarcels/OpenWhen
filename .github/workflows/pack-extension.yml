@@ -45,8 +45,22 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body: |
+            ${{ steps.release_body.outputs.body }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Determine release body
+        id: release_body
+        run: |
+          if [ -f CHANGELOG.md ]; then
+            body=$(sed -n '1,200p' CHANGELOG.md | sed 's/"/\\"/g')
+          else
+            body=$(git log -n 20 --pretty=format:"- %s")
+          fi
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          echo "$body" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
       - name: Upload release asset
         uses: actions/upload-release-asset@v1
         with:
