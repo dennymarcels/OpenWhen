@@ -70,6 +70,6 @@ jobs:
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: dist/*.zip
+          asset_path: dist/**/openwhen-*.zip
           asset_name: openwhen-${{ github.ref_name }}.zip
           asset_content_type: application/zip
