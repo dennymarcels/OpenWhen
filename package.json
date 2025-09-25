@@ -1,6 +1,6 @@
 {
   "name": "openwhen",
-  "version": "1.0.0-test",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "test": "jest --colors",
