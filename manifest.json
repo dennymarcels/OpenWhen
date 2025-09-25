@@ -23,7 +23,19 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
+  "action": {
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    },
+    "default_title": "OpenWhen",
+    "default_popup": "popup.html"
+  },
   "options_page": "options.html",
+  "side_panel": {
+    "default_path": "sidebar.html"
+  },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
@@ -40,6 +52,7 @@
         "icons/icon32.png",
         "icons/icon48.png",
         "icons/icon128.png",
+        "sidebar.html",
         "icons/icon.png",
         "icons/notification.svg"
       ],

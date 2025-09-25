@@ -67,3 +67,26 @@ h2 select{min-width:160px}
 }
 /* push page content down while banner is visible using a css variable set by content script */
 body{margin-top: var(--openwhen-banner-height, 0px);}
+
+/* Compact popup adjustments: when the document body has class 'popup' we use smaller spacing
+   and ensure elements wrap nicely in narrow extension popups. */
+body.popup{padding:8px;background:var(--openwhen-bg)}
+body.popup main{padding:10px}
+body.popup h2{font-size:13px}
+body.popup h2 select{min-width:120px}
+body.popup .label-inline{gap:6px}
+body.popup .label-inline input, body.popup input, body.popup select{padding:6px}
+body.popup .actions{margin-top:8px}
+body.popup .app-icon{width:36px;height:36px}
+
+/* Allow schedule-left to wrap so compact cards don't overflow */
+.schedule-item{gap:8px}
+.schedule-item > div{min-width:0}
+.schedule-item .schedule-left{flex:1;min-width:0}
+.schedule-item .schedule-left div{white-space:normal}
+
+@media (max-width:420px){
+  main{padding:10px}
+  h1{font-size:16px}
+  .schedule-item{padding:8px}
+}

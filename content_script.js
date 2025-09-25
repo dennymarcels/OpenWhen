@@ -1,6 +1,6 @@
 // content script to show a small banner when extension opens a page
 (function(){
-  function showBanner(text, source){
+  function showBanner(text, source, missedAt){
     try{
       const id = 'openwhen-banner';
       if(document.getElementById(id)) return;
@@ -9,7 +9,9 @@
       banner.className = 'openwhen-banner';
       const content = document.createElement('div');
       content.className = 'openwhen-content';
-  content.innerHTML = `<strong>opened by OpenWhen (${source})</strong><div style="margin-top:6px;font-weight:400">${text || ''}</div>`;
+  let extra = '';
+  try{ if(missedAt){ const d = new Date(Number(missedAt)); if(!isNaN(d.getTime())) extra = `<div style="margin-top:6px;font-weight:400">scheduled for ${d.toLocaleString()}</div>`; } }catch(e){}
+  content.innerHTML = `<strong>opened by OpenWhen (${source})</strong><div style="margin-top:6px;font-weight:400">${text || ''}</div>${extra}`;
       const close = document.createElement('button');
       close.className = 'openwhen-close-btn';
       close.textContent = '×';
@@ -31,7 +33,7 @@
 
   chrome.runtime.onMessage.addListener((msg, sender) => {
     if(msg && msg.type === 'openwhen_opened'){
-      showBanner(msg.message || '', msg.source || 'scheduled');
+      showBanner(msg.message || '', msg.source || 'scheduled', msg.missedAt || null);
     }
   });
 })();

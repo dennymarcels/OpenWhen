@@ -288,8 +288,14 @@ window.addEventListener('DOMContentLoaded', () => {
   const monthlyFields = $('#monthlyFields');
   const weeklyDays = $('#weeklyDays');
 
+  // Defensive: if the popup or hosting page doesn't include the full form, bail out gracefully
+  if(!form){
+    console.warn('[openwhen options] DOMContentLoaded: #addForm not found, aborting initialization');
+    return;
+  }
+
   function updateMode(){
-    const val = mode.value;
+    const val = mode ? mode.value : 'once';
     // update min for datetime-local when 'once' is selected to prevent past dates
     try{
       const whenInput = $('#when');
@@ -301,24 +307,36 @@ window.addEventListener('DOMContentLoaded', () => {
       }
     }catch(e){}
     if(val === 'once'){
-      onceFields.hidden = false; recurringFields.hidden = true; weeklyDays.hidden = true;
+      if(onceFields) onceFields.hidden = false;
+      if(recurringFields) recurringFields.hidden = true;
+      if(weeklyDays) weeklyDays.hidden = true;
       if(monthlyFields) monthlyFields.hidden = true;
       const stopLabel = $('#stopAfterLabel'); if(stopLabel) stopLabel.hidden = true;
     } else if(val === 'daily'){
-      onceFields.hidden = true; recurringFields.hidden = false; weeklyDays.hidden = true;
+      if(onceFields) onceFields.hidden = true;
+      if(recurringFields) recurringFields.hidden = false;
+      if(weeklyDays) weeklyDays.hidden = true;
       if(monthlyFields) monthlyFields.hidden = true;
       const stopLabel = $('#stopAfterLabel'); if(stopLabel) stopLabel.hidden = false;
     } else if(val === 'weekly'){
-      onceFields.hidden = true; recurringFields.hidden = false; weeklyDays.hidden = false;
+      if(onceFields) onceFields.hidden = true;
+      if(recurringFields) recurringFields.hidden = false;
+      if(weeklyDays) weeklyDays.hidden = false;
       if(monthlyFields) monthlyFields.hidden = true;
       const stopLabel = $('#stopAfterLabel'); if(stopLabel) stopLabel.hidden = false;
     } else if(val === 'monthly'){
-      onceFields.hidden = true; recurringFields.hidden = false; weeklyDays.hidden = true;
+      if(onceFields) onceFields.hidden = true;
+      if(recurringFields) recurringFields.hidden = false;
+      if(weeklyDays) weeklyDays.hidden = true;
       if(monthlyFields) monthlyFields.hidden = false;
       const stopLabel = $('#stopAfterLabel'); if(stopLabel) stopLabel.hidden = false;
     }
   }
-  mode.addEventListener('change', updateMode);
+  if(mode && typeof mode.addEventListener === 'function'){
+    mode.addEventListener('change', updateMode);
+  } else {
+    console.warn('[openwhen options] #mode element not found or has no addEventListener; using defaults');
+  }
   updateMode();
 
   // check for a prefill URL set by the context menu
@@ -364,7 +382,7 @@ window.addEventListener('DOMContentLoaded', () => {
       }
     }
     const time = $('#time').value || '00:00';
-    const days = Array.from(weeklyDays.querySelectorAll('input[type=checkbox]:checked')).map(i => Number(i.value));
+  const days = (weeklyDays && weeklyDays.querySelectorAll) ? Array.from(weeklyDays.querySelectorAll('input[type=checkbox]:checked')).map(i => Number(i.value)) : [];
     const monthDayInput = $('#monthDay');
     const monthDay = monthDayInput ? Number(monthDayInput.value) : null;
       const stopAfterInput = $('#stopAfter');

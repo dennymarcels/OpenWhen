@@ -4,7 +4,8 @@
   top:0;
   left:0;
   right:0;
-  background:rgba(45,124,255,0.95);
+  /* purple background */
+  background:rgba(123, 63, 159, 0.95);
   color:#fff;
   padding:10px 14px;
   font-family:system-ui, -apple-system, 'Segoe UI', Roboto, Arial;

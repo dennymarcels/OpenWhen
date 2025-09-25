@@ -9,6 +9,17 @@ function log(...args){
   console.log('[openwhen]', ...args);
 }
 
+// Debug: report runtime capabilities and manifest entries on worker start
+try{
+  const mf = chrome.runtime && chrome.runtime.getManifest ? chrome.runtime.getManifest() : null;
+  console.log('[openwhen] service worker start; manifest.action=', mf && mf.action ? mf.action : null, 'manifest.side_panel=', mf && mf.side_panel ? mf.side_panel : null);
+  console.log('[openwhen] chrome.sidePanel available=', !!(chrome.sidePanel && typeof chrome.sidePanel.open === 'function'));
+  console.log('[openwhen] chrome.action available=', !!chrome.action);
+}catch(e){ console.warn('[openwhen] startup debug log failed', e); }
+
+// No action.onClicked fallback registered: let the browser open the
+// extension popup declared via action.default_popup in the manifest.
+
 // ensure our context menu exists (safe to call multiple times)
 function ensureContextMenu(){
   try{
@@ -22,23 +33,12 @@ function ensureContextMenu(){
         // expected if the item didn't exist; log at debug level
         console.debug('[openwhen] remove open_link warning:', chrome.runtime.lastError.message);
       }
-      // Try creating with icons first, fall back to without icons on error
+      // create the link context menu item (without icons — some platforms reject the `icons` property)
       try{
-        chrome.contextMenus.create({
-          id: 'openwhen_open_link',
-          title: 'OpenWhen this link...',
-          contexts: ['link'],
-          icons: {"16": "icons/icon16.png","32": "icons/icon32.png","48": "icons/icon48.png"}
-        });
-        console.log('[openwhen] ensureContextMenu: created open_link with icons');
-      }catch(errIcons){
-        console.warn('[openwhen] ensureContextMenu: creating open_link with icons failed, trying without icons', errIcons && errIcons.message);
-        try{
-          chrome.contextMenus.create({ id: 'openwhen_open_link', title: 'OpenWhen this link...', contexts: ['link'] });
-          console.log('[openwhen] ensureContextMenu: created open_link without icons');
-        }catch(errPlain){
-          console.error('[openwhen] ensureContextMenu: failed to create open_link', errPlain && errPlain.message);
-        }
+        chrome.contextMenus.create({ id: 'openwhen_open_link', title: 'OpenWhen this link...', contexts: ['link'] });
+        console.log('[openwhen] ensureContextMenu: created open_link');
+      }catch(err){
+        console.error('[openwhen] ensureContextMenu: failed to create open_link', err && err.message);
       }
     });
 
@@ -48,15 +48,10 @@ function ensureContextMenu(){
         console.debug('[openwhen] remove open_page warning:', chrome.runtime.lastError.message);
       }
       try{
-        chrome.contextMenus.create({ id: 'openwhen_open_page', title: 'OpenWhen this link...', contexts: ['page'], icons: {"16": "icons/icon16.png","32": "icons/icon32.png"} });
-        console.log('[openwhen] ensureContextMenu: created open_page with icons');
-      }catch(e){
-        try{
-          chrome.contextMenus.create({ id: 'openwhen_open_page', title: 'OpenWhen this link...', contexts: ['page'] });
-          console.log('[openwhen] ensureContextMenu: created open_page without icons');
-        }catch(err){
-          // ignore
-        }
+        chrome.contextMenus.create({ id: 'openwhen_open_page', title: 'OpenWhen this link...', contexts: ['page'] });
+        console.log('[openwhen] ensureContextMenu: created open_page');
+      }catch(err){
+        console.error('[openwhen] ensureContextMenu: failed to create open_page', err && err.message);
       }
     });
   }catch(e){/* ignore */}
@@ -325,7 +320,7 @@ async function openScheduleNow(s, opts={late:false, missedCount:0}){
       if(typeof s.openInBackground !== 'undefined') createOpts.focused = !s.openInBackground;
       const win = await new Promise(resolve => chrome.windows.create(createOpts, win => resolve(win)));
         if(win && win.tabs && win.tabs[0]){
-          const res = await sendMessageToTabWhenReady(win.tabs[0].id, {type:'openwhen_opened', source: opts.late ? 'late' : (s.type === 'once' ? 'once' : 'scheduled'), message: buildMessage(s, opts), late: !!opts.late, missedCount: opts.missedCount || 0, scheduleId: s.id});
+          const res = await sendMessageToTabWhenReady(win.tabs[0].id, {type:'openwhen_opened', source: opts.late ? 'late' : (s.type === 'once' ? 'once' : 'scheduled'), message: buildMessage(s, opts), late: !!opts.late, missedCount: opts.missedCount || 0, missedAt: opts.missedAt || null, scheduleId: s.id});
           console.log('[openwhen] openScheduleNow result (window):', res);
           return res;
         }
@@ -334,7 +329,7 @@ async function openScheduleNow(s, opts={late:false, missedCount:0}){
       const createOpts = {url: s.url, active: !(s.openInBackground === true)};
       const tab = await new Promise(resolve => chrome.tabs.create(createOpts, tab => resolve(tab)));
       if(tab && tab.id){
-        const res = await sendMessageToTabWhenReady(tab.id, {type:'openwhen_opened', source: opts.late ? 'late' : (s.type === 'once' ? 'once' : 'scheduled'), message: buildMessage(s, opts), late: !!opts.late, missedCount: opts.missedCount || 0, scheduleId: s.id});
+  const res = await sendMessageToTabWhenReady(tab.id, {type:'openwhen_opened', source: opts.late ? 'late' : (s.type === 'once' ? 'once' : 'scheduled'), message: buildMessage(s, opts), late: !!opts.late, missedCount: opts.missedCount || 0, missedAt: opts.missedAt || null, scheduleId: s.id});
         console.log('[openwhen] openScheduleNow result (tab):', res);
         return res;
       }
@@ -487,7 +482,9 @@ async function rebuildAlarms(opts = {}){
       if(missed.length > 0){
         // open a single late tab/window representing missed occurrences (do not open multiple tabs)
         if(!opts.suppressLate){
-          const res = await openScheduleNow(s, {late:true, missedCount: missed.length});
+          // report the most recent missed occurrence to the content script so the banner can show the scheduled time
+          const mostRecentMissed = missed[missed.length - 1];
+          const res = await openScheduleNow(s, {late:true, missedCount: missed.length, missedAt: mostRecentMissed});
           if(res && (res.delivered === true || res.fallback === true)){
           // record last run time and increment runCount for missed occurrences using atomic updater
           try{
@@ -646,3 +643,13 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     }
   }
 });
+
+// NOTE: removed explicit chrome.action.onClicked handler so the browser
+// will perform the default action (open the side panel declared in the
+// manifest via action.default_panel). Prefilling the URL is handled by
+// `sidebar_prefill.js` which queries the active tab when the panel loads.
+
+// Note: do NOT add an action.onClicked listener — if present the listener
+// intercepts the click and prevents the browser from opening the
+// manifest-declared side panel (action.default_panel). `sidebar_prefill.js`
+// queries the active tab and fills the URL when the panel loads.

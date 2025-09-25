@@ -1,0 +1,25 @@
+// sidebar_prefill.js — populate #url with the active tab URL when the side panel opens
+(function(){
+  try{
+    // Prefer a stored prefill value (set by background before opening the popup/panel)
+    chrome.storage && chrome.storage.local && chrome.storage.local.get(['openwhen_prefill_url'], res => {
+      const stored = res && res.openwhen_prefill_url;
+      if(stored){
+        const input = document.getElementById('url');
+        if(input) input.value = stored;
+        try{ chrome.storage.local.remove(['openwhen_prefill_url']); }catch(e){}
+        return;
+      }
+      // fallback: try to get the active tab URL
+      try{
+        chrome.tabs && chrome.tabs.query && chrome.tabs.query({active:true,lastFocusedWindow:true}, tabs => {
+          const u = (tabs && tabs[0] && (tabs[0].url || tabs[0].pendingUrl)) ? (tabs[0].url || tabs[0].pendingUrl) : null;
+          if(u){
+            const input = document.getElementById('url');
+            if(input) input.value = u;
+          }
+        });
+      }catch(e){}
+    });
+  }catch(e){ /* ignore - fail quietly to avoid noisy CSP or runtime errors */ }
+})();
