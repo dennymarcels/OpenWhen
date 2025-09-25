@@ -2,16 +2,15 @@
 # Simple local pre-commit hook to run tests before committing.
 # To enable locally: git config core.hooksPath .githooks
 
-echo "Running pre-commit checks: npm test"
-if [ -x "./node_modules/.bin/jest" ]; then
-  ./node_modules/.bin/jest --colors --runInBand
+echo "Running pre-commit checks: lint-staged"
+if [ -x "./node_modules/.bin/lint-staged" ]; then
+  ./node_modules/.bin/lint-staged
 else
-  # fallback to npx if jest not installed locally
-  npx jest --colors --runInBand
+  npx lint-staged
 fi
 RC=$?
 if [ $RC -ne 0 ]; then
-  echo "Tests failed. Aborting commit. Fix tests or run 'git commit --no-verify' to bypass."
+  echo "pre-commit checks failed. Aborting commit. Fix issues or run 'git commit --no-verify' to bypass."
   exit $RC
 fi
 exit 0
