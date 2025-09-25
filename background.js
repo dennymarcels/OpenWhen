@@ -3,7 +3,7 @@
 const SCHEDULES_KEY = 'schedules';
 const LAST_CHECK_KEY = 'last_check';
 
-function debug(...args){ /* use console for errors only to keep output small */ }
+function _debug(...args){ /* use console for errors only to keep output small */ }
 
 async function getSchedules(){
   return new Promise(resolve => chrome.storage.local.get([SCHEDULES_KEY], res => resolve(res[SCHEDULES_KEY] || [])));
@@ -27,14 +27,14 @@ function _processWriteQueue(){
           chrome.storage.local.get([SCHEDULES_KEY], cur => {
             const stored = (cur && cur[SCHEDULES_KEY]) || [];
             const found = stored.find(x => String(x.id) === String(job.id));
-            if(!found){ try{ job.resolve && job.resolve(null); }catch(e){}; return res(); }
+            if(!found){ try{ job.resolve && job.resolve(null); }catch(e){} return res(); }
             let updated;
             try{ updated = typeof job.updater === 'function' ? job.updater(Object.assign({}, found)) : Object.assign({}, found, job.updater || {}); }catch(e){ updated = Object.assign({}, found); }
             updated.runCount = Number(updated.runCount) || 0;
             if(updated.lastRun === undefined) delete updated.lastRun;
             const merged = stored.map(x => String(x.id) === String(job.id) ? updated : x);
             const obj = {}; obj[SCHEDULES_KEY] = merged;
-            chrome.storage.local.set(obj, () => { try{ job.resolve && job.resolve(updated); }catch(e){}; res(); });
+            chrome.storage.local.set(obj, () => { try{ job.resolve && job.resolve(updated); }catch(e){} res(); });
           });
         });
         continue;
@@ -83,7 +83,7 @@ async function setLastCheck(ts){ return new Promise(resolve => { const o={}; o[L
 
 function updateScheduleAtomic(id, updater){ return new Promise((resolve) => { try{ _writeQueue.push({atomic:true, id, updater, resolve}); if(!_writeProcessing) _processWriteQueue(); }catch(e){ resolve(null); } }); }
 
-function sendMessageToTabWhenReady(tabId, message, timeoutMs = 10000){
+function _sendMessageToTabWhenReady(tabId, message, timeoutMs = 10000){
   return new Promise(resolve => {
     if(!tabId) return resolve({delivered:false, fallback:false});
     let sent = false, settled = false;
@@ -96,7 +96,7 @@ function sendMessageToTabWhenReady(tabId, message, timeoutMs = 10000){
       }catch(e){}
     };
     chrome.tabs.get(tabId, tab => {
-      const doFallback = () => { if(!sent) { const title = `opened by OpenWhen${message && message.source ? ` (${message.source})` : ''}`; /* fallback: log */ } if(!settled){ settled = true; resolve({delivered:false, fallback:true}); } };
+  const doFallback = () => { if(!sent) { const _title = `opened by OpenWhen${message && message.source ? ` (${message.source})` : ''}`; /* fallback: log */ } if(!settled){ settled = true; resolve({delivered:false, fallback:true}); } };
       if(tab && tab.status === 'complete'){ trySend(); setTimeout(() => { if(!sent) doFallback(); }, 500); return; }
       const onUpdated = (updatedTabId, changeInfo) => { if(updatedTabId !== tabId) return; if(changeInfo && changeInfo.status === 'complete'){ trySend(); chrome.tabs.onUpdated.removeListener(onUpdated); settled = true; setTimeout(() => { if(!sent) doFallback(); }, 500); } };
       chrome.tabs.onUpdated.addListener(onUpdated);
@@ -105,7 +105,7 @@ function sendMessageToTabWhenReady(tabId, message, timeoutMs = 10000){
   });
 }
 
-function buildMessage(s, opts){ const base = s.message || ''; if(opts && opts.late){ if(opts.missedCount && opts.missedCount > 1) return (`late  missed ${opts.missedCount} occurrences. ${base}`).trim(); if(opts.missedCount === 1) return (`late  missed 1 occurrence. ${base}`).trim(); return (`late  missed scheduled time. ${base}`).trim(); } return base; }
+function _buildMessage(s, opts){ const base = s.message || ''; if(opts && opts.late){ if(opts.missedCount && opts.missedCount > 1) return (`late — missed ${opts.missedCount} occurrences. ${base}`).trim(); if(opts.missedCount === 1) return (`late — missed 1 occurrence. ${base}`).trim(); return (`late — missed scheduled time. ${base}`).trim(); } return base; }
 
 async function rebuildAlarms(opts = {}){
   const schedules = await getSchedules();
@@ -148,7 +148,7 @@ chrome.alarms.onAlarm.addListener(async alarm => {
   if(!s) return;
   try{
     try{ await updateScheduleAtomic(s.id, prev => { const now = Date.now(); const newCount = (Number(prev.runCount) || 0) + 1; return Object.assign({}, prev, { runCount: newCount, lastRun: now }); }); }catch(e){}
-    try{ const openRes = await openScheduleNow(s, {}); }catch(e){}
+  try{ const _openRes = await openScheduleNow(s, {}); }catch(e){}
     try{ if(s.type === 'once') chrome.alarms.clear(makeAlarmName(s.id)); }catch(e){}
     await setLastCheck(Date.now());
     if(s.type !== 'once'){ if(!(s.stopAfter && Number(s.runCount) >= Number(s.stopAfter))){ const next = computeNextForSchedule(s); if(next) chrome.alarms.create(makeAlarmName(s.id), {when: next}); } }

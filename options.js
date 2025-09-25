@@ -26,14 +26,14 @@ function populateFormFromSchedule(s){
     const when = $('#when');
     if(when){
       if(!s.when) when.value = '';
-      else if(typeof s.when === 'string' && /^\d{4}-\d{2}-\d{2}[T \t]\d{2}:\d{2}/.test(s.when) && !/[zZ]|[+\-]\d{2}:?\d{2}$/.test(s.when)){
+  else if(typeof s.when === 'string' && /^\d{4}-\d{2}-\d{2}[T \t]\d{2}:\d{2}/.test(s.when) && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(s.when)){
         when.value = s.when.replace(/\s+/, 'T').slice(0,16);
       } else {
         try{ const d = typeof s.when === 'number' ? new Date(Number(s.when)) : new Date(String(s.when)); if(!isNaN(d.getTime())){ const pad = n => String(n).padStart(2,'0'); when.value = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; } else when.value = String(s.when || ''); }catch(e){ when.value = String(s.when || ''); }
       }
     }
     const time = $('#time'); if(time) time.value = s.time || '00:00';
-    const monthDay = $('#monthDay'); if(monthDay) monthDay.value = s.day || '';
+  const monthDay = $('#monthDay'); if(monthDay) monthDay.value = s.day || '';
     const stopAfter = $('#stopAfter'); if(stopAfter) stopAfter.value = s.stopAfter ? String(s.stopAfter) : '';
     const message = $('#message'); if(message) message.value = s.message || '';
     const weeklyDays = $('#weeklyDays'); if(weeklyDays && Array.isArray(s.days)){ Array.from(weeklyDays.querySelectorAll('input[type=checkbox]')).forEach(cb => cb.checked = s.days.map(String).includes(String(cb.value))); }
@@ -262,7 +262,7 @@ window.addEventListener('DOMContentLoaded', () => {
       // already has scheme
       if(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(u) || /^\/\//.test(u)) return u;
       // looks like domain
-      if(/^[^\s]+\.[^\s]+$/.test(u) || /^localhost([:\/]|$)/.test(u)) return 'https://' + u;
+  if(/^[^\s]+\.[^\s]+$/.test(u) || /^localhost([:/]|$)/.test(u)) return 'https://' + u;
       return u;
     }
     const normalized = normalizeUrl(url);

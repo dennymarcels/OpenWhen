@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>OpenWhen Privacy & Data Use</title>
+  <style>body{font-family:Segoe UI,Roboto,Arial,sans-serif;max-width:760px;margin:40px auto;color:#111;line-height:1.5;padding:0 20px}h1{font-size:28px}pre{background:#f7f7f7;padding:10px;border-radius:4px}</style>
+</head>
+<body>
+  <h1>OpenWhen Privacy & Data Use</h1>
+  <p>This document explains what OpenWhen stores and why. It's written for reviewers and users.</p>
+  <h2>What we store</h2>
+  <ul>
+    <li><strong>Schedules</strong>: the extension stores schedule entries (URL, schedule type, time, optional message, runCount, lastRun) in <code>chrome.storage.local</code> on your device.</li>
+  </ul>
+  <h2>What we do <em>not</em> store or send</h2>
+  <ul>
+    <li>We do <strong>not</strong> transmit schedule data, browsing history, or personal data to external servers.</li>
+    <li>We do <strong>not</strong> collect analytics, telemetry, or personal identifiers.</li>
+  </ul>
+  <h2>Why we request host permissions</h2>
+  <p>OpenWhen injects a small in-page banner into web pages (HTTP/HTTPS) when a scheduled URL is opened by the extension. The banner is added by a content script which runs only on HTTP/HTTPS pages. Host permissions are limited to <code>http://*/*</code> and <code>https://*/*</code> in the manifest to allow the content script to run on web pages opened by the extension.</p>
+  <h2>How to delete your data</h2>
+  <p>To delete all saved schedules, open the extension Options page and remove schedules, or remove the extension (which clears extension data), or clear extension data via the browser's Extensions UI.</p>
+  <h2>Contact</h2>
+  <p>Report privacy questions or issues at <a href="https://github.com/dennymarcels/OpenWhen">https://github.com/dennymarcels/OpenWhen</a>.</p>
+</body>
+</html>

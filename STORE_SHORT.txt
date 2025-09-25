@@ -1,0 +1,1 @@
+OpenWhen: open URLs on a schedule and show a short in-page reminder. Schedules are stored locally.
