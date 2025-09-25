@@ -1,18 +1,20 @@
 {
   "manifest_version": 3,
   "name": "OpenWhen",
-  "version": "0.1",
-  "description": "open urls on a schedule or once and show a short reminder message",
+  "version": "1.0.0",
+  "description": "OpenWhen: open URLs on a schedule and show a short reminder banner",
+  "homepage_url": "https://github.com/dennymarcels/OpenWhen",
+  "privacy_policy": "https://dennymarcels.github.io/OpenWhen/privacy.html",
   "permissions": [
     "storage",
     "alarms",
     "tabs",
     "windows",
-    "notifications",
     "contextMenus"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "http://*/*",
+    "https://*/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -38,7 +40,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
+      "matches": ["http://*/*","https://*/*"],
       "js": ["content_script.js"],
       "css": ["banner.css"],
       "run_at": "document_idle"
@@ -53,10 +55,9 @@
         "icons/icon48.png",
         "icons/icon128.png",
         "sidebar.html",
-        "icons/icon.png",
-        "icons/notification.svg"
+        "icons/icon.png"
       ],
-      "matches": ["<all_urls>"]
+      "matches": ["http://*/*","https://*/*"]
     }
   ]
 }
