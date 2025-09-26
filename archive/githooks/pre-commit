@@ -1,0 +1,17 @@
+#!/bin/sh
+# Archived pre-commit hook
+# This hook was moved from `.githooks/pre-commit` into `archive/githooks/` to keep
+# the repository workspace clean. The repository now uses `.husky` (see .git/config).
+
+echo "Running archived pre-commit checks: lint-staged"
+if [ -x "./node_modules/.bin/lint-staged" ]; then
+  ./node_modules/.bin/lint-staged
+else
+  npx lint-staged
+fi
+RC=$?
+if [ $RC -ne 0 ]; then
+  echo "pre-commit checks failed. To reproduce locally, run 'npx lint-staged' or use the active hooks in .husky"
+  exit $RC
+fi
+exit 0
