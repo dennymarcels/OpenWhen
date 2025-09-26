@@ -143,6 +143,26 @@ function _sendMessageToTabWhenReady(tabId, message, timeoutMs = 10000){
 
 function _buildMessage(s, opts){ const base = s.message || ''; if(opts && opts.late){ if(opts.missedCount && opts.missedCount > 1) return (`late — missed ${opts.missedCount} occurrences. ${base}`).trim(); if(opts.missedCount === 1) return (`late — missed 1 occurrence. ${base}`).trim(); return (`late — missed scheduled time. ${base}`).trim(); } return base; }
 
+// Safely compute a Date object for display from opts.missedAt or schedule.when
+function _computeWhenDate(s, opts){
+  try{
+    // prefer explicit missedAt (may be number or numeric string)
+    if(opts && typeof opts.missedAt !== 'undefined' && opts.missedAt !== null){
+      const v = Number(opts.missedAt);
+      if(!Number.isNaN(v) && v > 0) return new Date(v);
+      // if it's an ISO string, try parse
+      const p = Date.parse(String(opts.missedAt)); if(!Number.isNaN(p)) return new Date(p);
+    }
+    // fallback to schedule.when (could be ISO string or numeric)
+    if(s && typeof s.when !== 'undefined' && s.when !== null){
+      const v2 = Number(s.when);
+      if(!Number.isNaN(v2) && v2 > 0) return new Date(v2);
+      const p2 = Date.parse(String(s.when)); if(!Number.isNaN(p2)) return new Date(p2);
+    }
+  }catch(e){}
+  return null;
+}
+
 async function rebuildAlarms(opts = {}){
   const schedules = await getSchedules();
   const lastCheck = await getLastCheck();
@@ -374,7 +394,7 @@ async function openScheduleNow(s, opts){
               if(t && t.favIconUrl) icon = t.favIconUrl;
               if(t && t.title) titleText = t.title;
             }catch(e){}
-            const whenText = (opts && opts.missedAt) ? new Date(opts.missedAt) : (s && s.when ? new Date(s.when) : null);
+            const whenText = _computeWhenDate(s, opts);
             let whenLine = whenText ? `Scheduled for: ${whenText.toLocaleString()}` : 'Scheduled for: unknown';
             if(opts && opts.late){ if(opts.missedCount && opts.missedCount > 1) whenLine += ` (missed ${opts.missedCount} occurrences)`; else if(opts.missedCount === 1) whenLine += ' (missed 1 occurrence)'; else whenLine += ' (missed)'; }
             const reminderLine = messageBody ? `Reminder: ${messageBody}` : null;
@@ -384,7 +404,7 @@ async function openScheduleNow(s, opts){
               message: [reminderLine, whenLine].filter(Boolean).join('\n'),
               iconUrl: icon
             };
-            try{ chrome.notifications.create(notifId, notifOptions, nid => { try{ if(tabId) _notifToTab.set(nid, tabId); }catch(e){} }); }catch(e){}
+            try{ chrome.notifications.create(notifId, notifOptions, nid => { try{ if(tabId){ _notifToTab.set(nid, tabId); chrome.storage.local.set({['_notif_'+nid]: tabId}); } }catch(e){} }); }catch(e){}
             // If the tab later reports a favIconUrl, update the notification icon to match the page
             try{
               if(tabId){
@@ -412,7 +432,7 @@ async function openScheduleNow(s, opts){
                     }
                 });
                 // also attempt immediate update if favIconUrl already present on tab object
-                try{ if(t && t.favIconUrl && t.favIconUrl !== icon){ chrome.notifications.update(notifId, { iconUrl: t.favIconUrl }); } }catch(e){}
+                try{ if(t && t.favIconUrl && t.favIconUrl !== icon){ (async ()=>{ const resized = await fetchAndResizeIcon(t.favIconUrl,32); const useIcon = resized || t.favIconUrl; try{ chrome.notifications.update(notifId, { iconUrl: useIcon }); }catch(e){} })(); } }catch(e){}
               }
             }catch(e){}
             // inject a persistent toast inside the tab (notification still appears)
@@ -429,7 +449,7 @@ async function openScheduleNow(s, opts){
             message: [reminderLine, whenLine].filter(Boolean).join('\n'),
             iconUrl: icon
           };
-          try{ chrome.notifications.create(notifId, notifOptions, nid => { try{ if(tabId) _notifToTab.set(nid, tabId); }catch(e){} }); }catch(e){}
+          try{ chrome.notifications.create(notifId, notifOptions, nid => { try{ if(tabId){ _notifToTab.set(nid, tabId); chrome.storage.local.set({['_notif_'+nid]: tabId}); } }catch(e){} }); }catch(e){}
           try{ const manifest = chrome.runtime.getManifest(); const extName = manifest && manifest.name ? manifest.name : 'OpenWhen'; const extIconUrl = chrome.runtime.getURL('icons/icon32.png'); _injectToast(tabId, s.id, messageBody, whenLine, extIconUrl, extName); }catch(e){}
         }
       }catch(e){}
@@ -443,13 +463,25 @@ async function openScheduleNow(s, opts){
 // When a notification is clicked, focus the tab it opened (if still available)
 chrome.notifications.onClicked.addListener(async notifId => {
   try{
-    const tabId = _notifToTab.get(notifId);
+    let tabId = _notifToTab.get(notifId);
+    if(!tabId){
+      try{ const stored = await new Promise(res => chrome.storage.local.get(['_notif_'+notifId], r => res(r && r['_notif_'+notifId] || null))); if(stored) tabId = stored; }catch(e){}
+    }
     if(tabId){
       try{ const tab = await new Promise(res => chrome.tabs.get(tabId, res)); if(tab && tab.windowId !== undefined){ chrome.windows.update(tab.windowId, {focused:true}); chrome.tabs.update(tabId, {active:true}); } }
       catch(e){}
     }
-    // clear notification
+    // clear notification and remove persistent mapping
     try{ chrome.notifications.clear(notifId); }catch(e){}
+    try{ chrome.storage.local.remove(['_notif_'+notifId]); }catch(e){}
+  }catch(e){}
+});
+
+// Clean up persistent mapping when a notification is closed/dismissed
+chrome.notifications.onClosed.addListener((notifId, byUser) => {
+  try{
+    try{ chrome.storage.local.remove(['_notif_'+notifId]); }catch(e){}
+    try{ _notifToTab.delete(notifId); }catch(e){}
   }catch(e){}
 });
 
