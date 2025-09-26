@@ -6,6 +6,8 @@ OpenWhen
 
 Small Chromium extension to open URLs on a schedule (once / daily / weekly / monthly).
 
+Git hooks: this repository uses Husky (`.husky/`) for local Git hooks. Legacy `.githooks` was removed during cleanup; see the commit history if you need the original scripts.
+
 Features
 - Create one-time or recurring schedules to open URLs.
 - Open in a tab or window, optionally in background.
