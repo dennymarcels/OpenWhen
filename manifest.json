@@ -4,12 +4,13 @@
   "version": "1.0.0",
   "description": "OpenWhen: open URLs on a schedule and show a short reminder banner",
   "homepage_url": "https://github.com/dennymarcels/OpenWhen",
-  "privacy_policy": "https://dennymarcels.github.io/OpenWhen/privacy.html",
   "permissions": [
     "storage",
     "alarms",
     "tabs",
     "windows",
+    "scripting",
+    "notifications",
     "contextMenus"
   ],
   "host_permissions": [
@@ -38,14 +39,7 @@
   "side_panel": {
     "default_path": "sidebar.html"
   },
-  "content_scripts": [
-    {
-      "matches": ["http://*/*","https://*/*"],
-      "js": ["content_script.js"],
-      "css": ["banner.css"],
-      "run_at": "document_idle"
-    }
-  ],
+  
   "web_accessible_resources": [
     {
       "resources": [

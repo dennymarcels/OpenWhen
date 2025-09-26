@@ -66,10 +66,23 @@ jobs:
             ${{ steps.release_body.outputs.body }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Find built ZIP
+        id: find_zip
+        run: |
+          set -euo pipefail
+          echo "Looking for built zip in dist/"
+          ls -la dist || true
+          FILE=$(ls dist/*.zip 2>/dev/null | head -n1 || true)
+          if [ -z "${FILE}" ]; then
+            echo "No zip artifact found in dist/; ensure build:zip produced a zip into dist/" >&2
+            exit 1
+          fi
+          echo "zip=$FILE" >> $GITHUB_OUTPUT
+
       - name: Upload release asset
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: dist/**/openwhen-*.zip
+          asset_path: ${{ steps.find_zip.outputs.zip }}
           asset_name: openwhen-${{ github.ref_name }}.zip
           asset_content_type: application/zip

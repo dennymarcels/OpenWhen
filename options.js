@@ -65,11 +65,21 @@ function renderSchedules(list){
     const small = document.createElement('div'); small.className = 'small'; small.textContent = s.message ? s.message.toLowerCase() : '';
     // append title first
     left.appendChild(title);
-    // show if this will open in background right under the url
-    if(s.openInBackground){
-      const bgMarker = document.createElement('div'); bgMarker.className = 'small'; bgMarker.textContent = 'opens in background';
-      left.appendChild(bgMarker);
+    // show how this will open right under the url
+    const openLine = document.createElement('div'); openLine.className = 'small';
+    if(s.openIn === 'window'){
+      openLine.textContent = 'opens in window';
+    } else if(s.openIn === 'tab'){
+      if(s.openInBackground){
+        openLine.textContent = 'opens in tab (background)';
+      } else {
+        openLine.textContent = 'opens in tab';
+      }
+    } else {
+      // fallback for unexpected values
+      openLine.textContent = `opens in ${String(s.openIn || 'tab')}`;
     }
+    left.appendChild(openLine);
     left.appendChild(meta);
     left.appendChild(small);
     // show run counts for all schedules (including 'once')

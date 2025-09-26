@@ -35,7 +35,7 @@
   "lint-staged": {
     "*.js": [
       "eslint --fix --ext .js",
-      "npx jest --bail --findRelatedTests"
+      "npx jest --bail --findRelatedTests --passWithNoTests"
     ]
   }
 }

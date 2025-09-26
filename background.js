@@ -78,6 +78,42 @@ function occurrencesBetween(s, startTs, endTs, cap=365){
   return out;
 }
 
+// Try to fetch a favicon URL and resize it to a small PNG data URL (returns null on failure)
+async function fetchAndResizeIcon(url, size=32){
+  try{
+    if(!url) return null;
+    // try to fetch the image
+    const resp = await fetch(url, {mode: 'cors'});
+    if(!resp || !resp.ok) return null;
+    const blob = await resp.blob();
+    // create an ImageBitmap and draw into an OffscreenCanvas to resize
+    if(typeof createImageBitmap !== 'function' || typeof OffscreenCanvas === 'undefined') return null;
+    const imgBitmap = await createImageBitmap(blob);
+    const canvas = new OffscreenCanvas(size, size);
+    const ctx = canvas.getContext('2d');
+    if(!ctx) return null;
+    // draw preserving aspect ratio and center
+    const sw = imgBitmap.width || size;
+    const sh = imgBitmap.height || size;
+    const ratio = Math.min(size / sw, size / sh);
+    const dw = Math.round(sw * ratio);
+    const dh = Math.round(sh * ratio);
+    const dx = Math.round((size - dw) / 2);
+    const dy = Math.round((size - dh) / 2);
+    ctx.clearRect(0,0,size,size);
+    ctx.drawImage(imgBitmap, dx, dy, dw, dh);
+    const outBlob = await canvas.convertToBlob({type: 'image/png'});
+    return await new Promise(res => {
+      try{
+        const fr = new FileReader();
+        fr.onload = () => res(fr.result);
+        fr.onerror = () => res(null);
+        fr.readAsDataURL(outBlob);
+      }catch(e){ res(null); }
+    });
+  }catch(e){ return null; }
+}
+
 async function getLastCheck(){ return new Promise(resolve => chrome.storage.local.get([LAST_CHECK_KEY], res => resolve(res[LAST_CHECK_KEY] || null))); }
 async function setLastCheck(ts){ return new Promise(resolve => { const o={}; o[LAST_CHECK_KEY]=ts; chrome.storage.local.set(o, resolve); }); }
 
@@ -135,9 +171,19 @@ async function rebuildAlarms(opts = {}){
   });
 }
 
-chrome.runtime.onInstalled.addListener(() => { rebuildAlarms({suppressLate:true}); try{ chrome.contextMenus.create({ id: 'openwhen_open_link', title: 'OpenWhen this link...', contexts: ['link'] }); chrome.contextMenus.create({ id: 'openwhen_open_page', title: 'OpenWhen this page...', contexts: ['page'] }); }catch(e){} });
+chrome.runtime.onInstalled.addListener(() => { rebuildAlarms({suppressLate:true}); try{ ensureContextMenu(); }catch(e){} });
 chrome.runtime.onStartup.addListener(() => { rebuildAlarms({suppressLate:true}); });
-ensureContextMenu = function(){ try{ chrome.contextMenus.create({ id: 'openwhen_open_link', title: 'OpenWhen this link...', contexts: ['link'] }); chrome.contextMenus.create({ id: 'openwhen_open_page', title: 'OpenWhen this page...', contexts: ['page'] }); }catch(e){} };
+ensureContextMenu = function(){
+  try{
+    chrome.contextMenus.removeAll(() => {
+      try{
+        chrome.contextMenus.create({ id: 'openwhen_open_link', title: 'OpenWhen this link...', contexts: ['link'] });
+        chrome.contextMenus.create({ id: 'openwhen_open_page', title: 'OpenWhen this page...', contexts: ['page'] });
+      }catch(e){}
+    });
+  }catch(e){}
+};
+
 ensureContextMenu();
 
 chrome.alarms.onAlarm.addListener(async alarm => {
@@ -164,3 +210,249 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     try{ chrome.storage.local.set({openwhen_prefill_url: linkUrl}, () => { try{ chrome.runtime.openOptionsPage(() => { if(chrome.runtime.lastError) chrome.tabs.create({url: chrome.runtime.getURL('options.html')}); }); }catch(e){ chrome.tabs.create({url: chrome.runtime.getURL('options.html')}); } }); }catch(e){ const tempSchedule = {id: 'ctx_' + Date.now(), url: linkUrl, type: 'once', openIn: 'tab', message: ''}; openScheduleNow(tempSchedule, {late:false, missedCount:0}); }
   }
 });
+
+// Map notificationId -> tabId so click events can focus the correct tab
+const _notifToTab = new Map();
+
+function _makeNotificationId(schedule){ return `openwhen_notif_${String(schedule.id)}_${Date.now()}_${Math.floor(Math.random()*10000)}`; }
+
+async function openScheduleNow(s, opts){
+  // contract:
+  // inputs: s = schedule object {id, url, openIn, openInBackground, message}
+  // opts: {late, missedCount, missedAt}
+  // outputs: {delivered:bool, fallback:bool, tabId: number|null}
+  try{
+    const url = (s && s.url) || null; if(!url) return {delivered:false, fallback:false, tabId:null};
+    // open the URL according to schedule preference
+    let createdTab = null;
+    if(s.openIn === 'window'){
+      await new Promise(res => chrome.windows.create({url, focused: !s.openInBackground}, w => { try{ if(w && w.tabs && w.tabs[0]) createdTab = w.tabs[0]; }catch(e){} res(); }));
+    } else {
+      // open as tab
+      await new Promise(res => chrome.tabs.create({url, active: !s.openInBackground}, t => { createdTab = t; res(); }));
+    }
+
+    const tabId = createdTab && createdTab.id ? createdTab.id : null;
+
+    // Helper: inject a persistent toast into the tab (persists until dismissed or the page unloads)
+  const _injectToast = async (tabId, scheduleId, messageBody, whenLine, extIconUrl, extName) => {
+      if(!tabId) return;
+      try{
+        const run = (scheduleIdArg, messageBodyArg, whenLineArg, extIconArg, extNameArg) => {
+          try{
+            const id = `openwhen-toast-${String(scheduleIdArg)}`;
+            if(document.getElementById(id)) return;
+            const toast = document.createElement('div');
+            toast.id = id;
+            toast.style.position = 'fixed';
+            toast.style.top = '0';
+            toast.style.left = '0';
+            toast.style.right = '0';
+            toast.style.zIndex = '2147483647';
+            toast.style.background = 'rgba(89, 15, 111, 0.95)';
+            toast.style.color = '#ffffff';
+            toast.style.fontFamily = 'sans-serif';
+            toast.style.display = 'flex';
+            toast.style.alignItems = 'center';
+            toast.style.justifyContent = 'space-between';
+            toast.style.padding = '10px 14px';
+            toast.style.boxShadow = '0 2px 6px rgba(0,0,0,0.35)';
+            toast.style.backdropFilter = 'saturate(120%) blur(2px)';
+            toast.style.borderBottom = '1px solid rgba(255,255,255,0.06)';
+
+            // left area: extension icon + name, then content
+            const left = document.createElement('div');
+            left.style.display = 'flex';
+            left.style.alignItems = 'center';
+            left.style.gap = '12px';
+
+            const brand = document.createElement('div');
+            brand.style.display = 'flex';
+            brand.style.alignItems = 'center';
+            brand.style.gap = '8px';
+
+            if(extIconArg){
+              try{
+                const img = document.createElement('img');
+                img.src = extIconArg;
+                img.alt = extNameArg || '';
+                img.style.width = '28px';
+                img.style.height = '28px';
+                img.style.borderRadius = '4px';
+                img.style.flex = '0 0 auto';
+                brand.appendChild(img);
+              }catch(e){}
+            }
+            const titleSpan = document.createElement('div');
+            titleSpan.style.fontWeight = '700';
+            titleSpan.style.fontSize = '14px';
+            titleSpan.textContent = extNameArg || 'OpenWhen';
+            brand.appendChild(titleSpan);
+
+            const content = document.createElement('div');
+            content.style.display = 'flex';
+            content.style.flexDirection = 'column';
+            content.style.gap = '4px';
+            content.style.maxWidth = 'calc(100% - 48px)';
+
+            if(messageBodyArg){
+              const reminder = document.createElement('div');
+              reminder.style.fontWeight = '600';
+              reminder.style.fontSize = '13px';
+              reminder.textContent = `Reminder: ${messageBodyArg}`;
+              content.appendChild(reminder);
+            }
+
+            const when = document.createElement('div');
+            when.style.fontSize = '12px';
+            when.style.opacity = '0.95';
+            when.textContent = whenLineArg || '';
+            content.appendChild(when);
+
+            left.appendChild(brand);
+            left.appendChild(content);
+
+            const close = document.createElement('button');
+            close.textContent = '\u00d7';
+            close.setAttribute('aria-label', 'Dismiss OpenWhen reminder');
+            close.style.background = 'transparent';
+            close.style.border = 'none';
+            close.style.color = '#fff';
+            close.style.fontSize = '18px';
+            close.style.cursor = 'pointer';
+            close.style.marginLeft = '12px';
+            close.addEventListener('click', () => { try{ toast.remove(); }catch(e){} });
+
+            toast.appendChild(left);
+            toast.appendChild(close);
+            document.documentElement.appendChild(toast);
+          }catch(e){}
+        };
+
+        // Wait for tab to be complete then inject by executing the function in page context
+        chrome.tabs.get(tabId, t => {
+          const doInject = () => {
+              try{
+              chrome.scripting.executeScript({
+                target: { tabId },
+                func: run,
+                args: [scheduleId, messageBody, whenLine, extIconUrl, extName]
+              });
+            }catch(e){}
+          };
+          if(t && t.status === 'complete') return doInject();
+          const onUpdated = (updatedTabId, changeInfo) => {
+            if(updatedTabId !== tabId) return;
+            if(changeInfo && changeInfo.status === 'complete'){
+              try{ doInject(); }catch(e){}
+              chrome.tabs.onUpdated.removeListener(onUpdated);
+            }
+          };
+          chrome.tabs.onUpdated.addListener(onUpdated);
+          // safety timeout: try injecting after a short delay even if tab doesn't report complete
+          setTimeout(() => { try{ doInject(); chrome.tabs.onUpdated.removeListener(onUpdated); }catch(e){} }, 8000);
+        });
+      }catch(e){}
+    };
+
+    // build message text
+    const messageBody = _buildMessage(s, opts || {});
+
+    // Always create a browser notification that can focus the tab when clicked
+    try{
+      const notifId = _makeNotificationId(s);
+      // ensure mapping exists immediately so clicks on the notification card
+      // focus the tab even if the create callback runs slightly later
+      try{ if(tabId) _notifToTab.set(notifId, tabId); }catch(e){}
+      // try to use the tab's title and favicon to feel more "in-browser"
+      let icon = chrome.runtime.getURL('icons/icon128.png');
+      let titleText = `Opened by OpenWhen${s && s.source ? ` (${s.source})` : ''}`;
+      try{
+        if(tabId){
+          chrome.tabs.get(tabId, t => {
+            try{
+              if(t && t.favIconUrl) icon = t.favIconUrl;
+              if(t && t.title) titleText = t.title;
+            }catch(e){}
+            const whenText = (opts && opts.missedAt) ? new Date(opts.missedAt) : (s && s.when ? new Date(s.when) : null);
+            let whenLine = whenText ? `Scheduled for: ${whenText.toLocaleString()}` : 'Scheduled for: unknown';
+            if(opts && opts.late){ if(opts.missedCount && opts.missedCount > 1) whenLine += ` (missed ${opts.missedCount} occurrences)`; else if(opts.missedCount === 1) whenLine += ' (missed 1 occurrence)'; else whenLine += ' (missed)'; }
+            const reminderLine = messageBody ? `Reminder: ${messageBody}` : null;
+            const notifOptions = {
+              type: 'basic',
+              title: titleText,
+              message: [reminderLine, whenLine].filter(Boolean).join('\n'),
+              iconUrl: icon
+            };
+            try{ chrome.notifications.create(notifId, notifOptions, nid => { try{ if(tabId) _notifToTab.set(nid, tabId); }catch(e){} }); }catch(e){}
+            // If the tab later reports a favIconUrl, update the notification icon to match the page
+            try{
+              if(tabId){
+                // (no-op placeholder removed; using onUpdated listener below)
+                // listen for the tab to update with a favIconUrl
+                chrome.tabs.onUpdated.addListener((updatedTabId, changeInfo, tabObj) => {
+                  if(updatedTabId !== tabId) return;
+                  if(changeInfo && changeInfo.favIconUrl){
+                      (async () => {
+                        try{
+                          const resized = await fetchAndResizeIcon(changeInfo.favIconUrl, 32);
+                          const useIcon = resized || changeInfo.favIconUrl;
+                          try{ chrome.notifications.update(notifId, { iconUrl: useIcon }); }catch(e){}
+                        }catch(e){}
+                      })();
+                      // remove listener via wrapper above
+                    } else if(tabObj && tabObj.favIconUrl){
+                      (async () => {
+                        try{
+                          const resized = await fetchAndResizeIcon(tabObj.favIconUrl, 32);
+                          const useIcon = resized || tabObj.favIconUrl;
+                          try{ chrome.notifications.update(notifId, { iconUrl: useIcon }); }catch(e){}
+                        }catch(e){}
+                      })();
+                    }
+                });
+                // also attempt immediate update if favIconUrl already present on tab object
+                try{ if(t && t.favIconUrl && t.favIconUrl !== icon){ chrome.notifications.update(notifId, { iconUrl: t.favIconUrl }); } }catch(e){}
+              }
+            }catch(e){}
+            // inject a persistent toast inside the tab (notification still appears)
+            try{ const manifest = chrome.runtime.getManifest(); const extName = manifest && manifest.name ? manifest.name : 'OpenWhen'; const extIconUrl = chrome.runtime.getURL('icons/icon32.png'); _injectToast(tabId, s.id, messageBody, whenLine, extIconUrl, extName); }catch(e){}
+          });
+        } else {
+          const whenText = (opts && opts.missedAt) ? new Date(opts.missedAt) : (s && s.when ? new Date(s.when) : null);
+          let whenLine = whenText ? `Scheduled for: ${whenText.toLocaleString()}` : 'Scheduled for: unknown';
+          if(opts && opts.late){ if(opts.missedCount && opts.missedCount > 1) whenLine += ` (missed ${opts.missedCount} occurrences)`; else if(opts.missedCount === 1) whenLine += ' (missed 1 occurrence)'; else whenLine += ' (missed)'; }
+          const reminderLine = messageBody ? `Reminder: ${messageBody}` : null;
+          const notifOptions = {
+            type: 'basic',
+            title: titleText,
+            message: [reminderLine, whenLine].filter(Boolean).join('\n'),
+            iconUrl: icon
+          };
+          try{ chrome.notifications.create(notifId, notifOptions, nid => { try{ if(tabId) _notifToTab.set(nid, tabId); }catch(e){} }); }catch(e){}
+          try{ const manifest = chrome.runtime.getManifest(); const extName = manifest && manifest.name ? manifest.name : 'OpenWhen'; const extIconUrl = chrome.runtime.getURL('icons/icon32.png'); _injectToast(tabId, s.id, messageBody, whenLine, extIconUrl, extName); }catch(e){}
+        }
+      }catch(e){}
+    }catch(e){}
+
+    // Return fallback:true to indicate handled by notification
+    return {delivered:false, fallback:true, tabId};
+  }catch(e){ return {delivered:false, fallback:true, tabId:null}; }
+}
+
+// When a notification is clicked, focus the tab it opened (if still available)
+chrome.notifications.onClicked.addListener(async notifId => {
+  try{
+    const tabId = _notifToTab.get(notifId);
+    if(tabId){
+      try{ const tab = await new Promise(res => chrome.tabs.get(tabId, res)); if(tab && tab.windowId !== undefined){ chrome.windows.update(tab.windowId, {focused:true}); chrome.tabs.update(tabId, {active:true}); } }
+      catch(e){}
+    }
+    // clear notification
+    try{ chrome.notifications.clear(notifId); }catch(e){}
+  }catch(e){}
+});
+
+// handle notification button clicks (Focus / Dismiss)
+// (Notification buttons removed; clicking the notification card focuses the tab.)
+
