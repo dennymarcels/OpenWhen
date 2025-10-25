@@ -1,9 +1,13 @@
-// background service worker for OpenWhen (concise, minimal logging)
-
 const SCHEDULES_KEY = 'schedules';
 const LAST_CHECK_KEY = 'last_check';
 
-function _debug(...args){ /* use console for errors only to keep output small */ }
+try{
+  self.addEventListener && self.addEventListener('unhandledrejection', (ev) => {
+    try{
+      try{ ev.preventDefault && ev.preventDefault(); }catch(e){}
+    }catch(e){}
+  });
+}catch(e){}
 
 async function getSchedules(){
   return new Promise(resolve => chrome.storage.local.get([SCHEDULES_KEY], res => resolve(res[SCHEDULES_KEY] || [])));
@@ -42,7 +46,6 @@ function _processWriteQueue(){
       const schedules = job.schedules;
       const obj = {}; obj[SCHEDULES_KEY] = schedules;
       await new Promise(res => {
-        // safety: avoid overwriting non-empty storage with empty array
         if(Array.isArray(schedules) && schedules.length === 0){
           chrome.storage.local.get([SCHEDULES_KEY], cur => { const curList = (cur && cur[SCHEDULES_KEY]) || []; if(curList && curList.length > 0) return res(); chrome.storage.local.set(obj, res); });
         } else {
@@ -82,17 +85,14 @@ function occurrencesBetween(s, startTs, endTs, cap=365){
 async function fetchAndResizeIcon(url, size=32){
   try{
     if(!url) return null;
-    // try to fetch the image
     const resp = await fetch(url, {mode: 'cors'});
     if(!resp || !resp.ok) return null;
     const blob = await resp.blob();
-    // create an ImageBitmap and draw into an OffscreenCanvas to resize
     if(typeof createImageBitmap !== 'function' || typeof OffscreenCanvas === 'undefined') return null;
     const imgBitmap = await createImageBitmap(blob);
     const canvas = new OffscreenCanvas(size, size);
     const ctx = canvas.getContext('2d');
     if(!ctx) return null;
-    // draw preserving aspect ratio and center
     const sw = imgBitmap.width || size;
     const sh = imgBitmap.height || size;
     const ratio = Math.min(size / sw, size / sh);
@@ -129,7 +129,7 @@ function _sendMessageToTabWhenReady(tabId, message, timeoutMs = 10000){
           const lastErr = chrome.runtime.lastError;
           if(!lastErr){ sent = true; if(!settled){ settled = true; resolve({delivered:true, fallback:false}); } }
         });
-      }catch(e){}
+              }catch(e){}
     };
     chrome.tabs.get(tabId, tab => {
   const doFallback = () => { if(!sent) { const _title = `opened by OpenWhen${message && message.source ? ` (${message.source})` : ''}`; /* fallback: log */ } if(!settled){ settled = true; resolve({delivered:false, fallback:true}); } };
@@ -141,19 +141,69 @@ function _sendMessageToTabWhenReady(tabId, message, timeoutMs = 10000){
   });
 }
 
-function _buildMessage(s, opts){ const base = s.message || ''; if(opts && opts.late){ if(opts.missedCount && opts.missedCount > 1) return (`late — missed ${opts.missedCount} occurrences. ${base}`).trim(); if(opts.missedCount === 1) return (`late — missed 1 occurrence. ${base}`).trim(); return (`late — missed scheduled time. ${base}`).trim(); } return base; }
+function _buildMessage(s){
+  try{
+    const value = s && typeof s.message === 'string' ? s.message.trim() : '';
+    if(value) return value;
+  }catch(e){}
+  if(s && s.url) return s.url;
+  const manifest = chrome.runtime.getManifest && chrome.runtime.getManifest();
+  if(manifest && manifest.name) return manifest.name;
+  return 'OpenWhen reminder';
+}
+
+function _describeSchedule(s){
+  try{
+    if(!s) return '';
+    const parts = [];
+    const typeMap = { once: 'once', daily: 'daily', weekly: 'weekly', monthly: 'monthly' };
+    if(s.type && typeMap[s.type]) parts.push(typeMap[s.type]);
+    if(s.openIn === 'window') parts.push('new window'); else parts.push('new tab');
+    if(s.openInBackground) parts.push('background'); else parts.push('focus');
+    return parts.join(', ');
+  }catch(e){ return ''; }
+}
+
+function _resolveWhenDate(s, opts){
+  try{
+    if(opts && opts.late){
+      if(typeof opts.missedAt !== 'undefined' && opts.missedAt !== null){
+        const mv = Number(opts.missedAt);
+        if(!Number.isNaN(mv) && mv > 0) return new Date(mv);
+        const parsed = Date.parse(String(opts.missedAt));
+        if(!Number.isNaN(parsed)) return new Date(parsed);
+      }
+    }
+  }catch(e){}
+  return _computeWhenDate(s, opts);
+}
+
+function _buildDisplayContent(schedule, whenDate, opts){
+  const message = _buildMessage(schedule);
+  const descriptor = _describeSchedule(schedule);
+  const headline = message || descriptor || 'OpenWhen';
+  const hasMessage = !!(schedule && typeof schedule.message === 'string' && schedule.message.trim());
+  const whenLine = whenDate ? `scheduled for: ${_formatDateShort(whenDate)}` : 'scheduled for: unknown';
+  let lateInline = null;
+  if(opts && opts.late){
+    const rawMissed = Number(opts.missedCount);
+    const missed = Number.isFinite(rawMissed) && rawMissed > 0 ? Math.floor(rawMissed) : 1;
+    const plural = missed === 1 ? 'time' : 'times';
+    lateInline = `late! (missed ${missed} ${plural})`;
+  }
+  return { headline, whenLine, lateInline, hasMessage };
+}
 
 // Safely compute a Date object for display from opts.missedAt or schedule.when
 function _computeWhenDate(s, opts){
   try{
-    // prefer explicit missedAt (may be number or numeric string)
-    if(opts && typeof opts.missedAt !== 'undefined' && opts.missedAt !== null){
-      const v = Number(opts.missedAt);
-      if(!Number.isNaN(v) && v > 0) return new Date(v);
-      // if it's an ISO string, try parse
-      const p = Date.parse(String(opts.missedAt)); if(!Number.isNaN(p)) return new Date(p);
+    // Only consider an explicit scheduledAt (when this event was scheduled) or the schedule.when
+    if(opts && typeof opts.scheduledAt !== 'undefined' && opts.scheduledAt !== null){
+      const v0 = Number(opts.scheduledAt);
+      if(!Number.isNaN(v0) && v0 > 0) return new Date(v0);
+      const p0 = Date.parse(String(opts.scheduledAt)); if(!Number.isNaN(p0)) return new Date(p0);
     }
-    // fallback to schedule.when (could be ISO string or numeric)
+    // fallback to schedule.when (for one-off schedules)
     if(s && typeof s.when !== 'undefined' && s.when !== null){
       const v2 = Number(s.when);
       if(!Number.isNaN(v2) && v2 > 0) return new Date(v2);
@@ -161,6 +211,20 @@ function _computeWhenDate(s, opts){
     }
   }catch(e){}
   return null;
+}
+
+// Format a Date as DD/MM/YYYY, HH:MM:SS (zero-padded)
+function _formatDateShort(d){
+  try{
+    if(!d) return null;
+    const dd = String(d.getDate()).padStart(2,'0');
+    const mm = String(d.getMonth()+1).padStart(2,'0');
+    const yyyy = d.getFullYear();
+    const hh = String(d.getHours()).padStart(2,'0');
+    const min = String(d.getMinutes()).padStart(2,'0');
+    const ss = String(d.getSeconds()).padStart(2,'0');
+    return `${dd}/${mm}/${yyyy}, ${hh}:${min}:${ss}`;
+  }catch(e){ return null; }
 }
 
 async function rebuildAlarms(opts = {}){
@@ -212,16 +276,75 @@ chrome.alarms.onAlarm.addListener(async alarm => {
   const schedules = await getSchedules();
   const s = schedules.find(x => String(x.id) === String(id));
   if(!s) return;
+  
   try{
-    try{ await updateScheduleAtomic(s.id, prev => { const now = Date.now(); const newCount = (Number(prev.runCount) || 0) + 1; return Object.assign({}, prev, { runCount: newCount, lastRun: now }); }); }catch(e){}
-  try{ const _openRes = await openScheduleNow(s, {}); }catch(e){}
+    const now = Date.now();
+    const scheduledTs = alarm && alarm.scheduledTime ? alarm.scheduledTime : now;
+    const lastCheck = await getLastCheck();
+    const windowStart = lastCheck || scheduledTs;
+    const missed = occurrencesBetween(s, windowStart, now);
+    const missedCount = missed.length;
+    const isLate = missedCount > 1 || (now - scheduledTs > 60000);
+    
+    try{
+      await updateScheduleAtomic(s.id, prev => {
+        const newCount = (Number(prev.runCount) || 0) + Math.max(1, missedCount);
+        return Object.assign({}, prev, { runCount: newCount, lastRun: now });
+      });
+    }catch(e){}
+    
+    try{
+      const openOpts = { scheduledAt: scheduledTs };
+      if(isLate){
+        openOpts.late = true;
+        openOpts.missedCount = missedCount;
+        openOpts.missedAt = scheduledTs;
+      }
+      await openScheduleNow(s, openOpts);
+    }catch(e){}
+    
     try{ if(s.type === 'once') chrome.alarms.clear(makeAlarmName(s.id)); }catch(e){}
     await setLastCheck(Date.now());
-    if(s.type !== 'once'){ if(!(s.stopAfter && Number(s.runCount) >= Number(s.stopAfter))){ const next = computeNextForSchedule(s); if(next) chrome.alarms.create(makeAlarmName(s.id), {when: next}); } }
+    
+    if(s.type !== 'once'){
+      if(!(s.stopAfter && Number(s.runCount) >= Number(s.stopAfter))){
+        const next = computeNextForSchedule(s);
+        if(next) chrome.alarms.create(makeAlarmName(s.id), {when: next});
+      }
+    }
   }catch(e){}
 });
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => { if(msg && msg.type === 'rebuild'){ try{ rebuildAlarms(msg || {}); }catch(e){} sendResponse({ok:true}); } });
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  (async () => {
+    try{
+      if(!msg || msg.type !== 'openwhen_cancel_schedule' || !msg.id) return;
+      const id = msg.id;
+      const schedules = await getSchedules();
+      const remaining = (schedules || []).filter(s => String(s.id) !== String(id));
+      await setSchedules(remaining);
+      try{ chrome.alarms.clear(makeAlarmName(id)); }catch(e){}
+      try{
+        const keys = (await new Promise(res => chrome.storage.local.get(null, r => res(Object.keys(r || {}))))) || [];
+        const toRemove = keys.filter(k => k && k.indexOf('_notif_') === 0);
+        if(toRemove.length) chrome.storage.local.remove(toRemove);
+      }catch(e){}
+      try{
+        chrome.runtime.sendMessage({ type: 'schedules_updated' }, (resp) => {
+          try{
+            chrome.runtime && chrome.runtime.lastError;
+          }catch(e){}
+        });
+      }catch(e){}
+      sendResponse({ ok: true });
+    }catch(e){ 
+      try{ sendResponse({ ok: false, error: String(e) }); }catch(e){} 
+    }
+  })();
+  return true;
+});
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if(!info || !info.menuItemId) return;
@@ -231,134 +354,486 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 });
 
-// Map notificationId -> tabId so click events can focus the correct tab
 const _notifToTab = new Map();
+
+function _createNotificationSafe(notifId, options, tabId){
+  try{
+    chrome.notifications.create(notifId, options, nid => {
+      const err = chrome.runtime.lastError;
+      if(err){
+        try{
+          // retry with extension icon
+          const fallbackOpts = Object.assign({}, options, { iconUrl: chrome.runtime.getURL('icons/icon128.png') });
+          chrome.notifications.create(notifId, fallbackOpts, nid2 => {
+            try{ if(tabId){ _notifToTab.set(nid2, tabId); chrome.storage.local.set({['_notif_'+nid2]: tabId}); } }catch(e){}
+          });
+        }catch(e){}
+      } else {
+        try{ if(tabId){ _notifToTab.set(nid, tabId); chrome.storage.local.set({['_notif_'+nid]: tabId}); } }catch(e){}
+      }
+    });
+  }catch(e){}
+}
+
+function _updateNotificationSafe(notifId, options){
+  try{
+    chrome.notifications.update(notifId, options, ok => {
+      const err = chrome.runtime.lastError;
+      if(err){
+        try{
+          const fallbackOpts = Object.assign({}, options, { iconUrl: chrome.runtime.getURL('icons/icon128.png') });
+          chrome.notifications.update(notifId, fallbackOpts, () => {});
+        }catch(e){}
+      }
+    });
+  }catch(e){}
+}
 
 function _makeNotificationId(schedule){ return `openwhen_notif_${String(schedule.id)}_${Date.now()}_${Math.floor(Math.random()*10000)}`; }
 
 async function openScheduleNow(s, opts){
-  // contract:
-  // inputs: s = schedule object {id, url, openIn, openInBackground, message}
-  // opts: {late, missedCount, missedAt}
-  // outputs: {delivered:bool, fallback:bool, tabId: number|null}
   try{
     const url = (s && s.url) || null; if(!url) return {delivered:false, fallback:false, tabId:null};
-    // open the URL according to schedule preference
+    const meta = Object.assign({}, opts || {});
+    const nowTs = Date.now();
+    let scheduledTs = null;
+    if(meta.scheduledAt !== undefined && meta.scheduledAt !== null){
+      const direct = Number(meta.scheduledAt);
+      if(!Number.isNaN(direct) && direct > 0){
+        scheduledTs = direct;
+      } else {
+        const parsed = Date.parse(String(meta.scheduledAt));
+        if(!Number.isNaN(parsed)) scheduledTs = parsed;
+      }
+    }
+    if(scheduledTs === null){
+      const fallbackDate = _computeWhenDate(s, meta);
+      if(fallbackDate) scheduledTs = fallbackDate.getTime();
+    }
+    if(!meta.late && scheduledTs !== null){
+      if(nowTs - scheduledTs > 60000){
+        meta.late = true;
+        if(meta.missedCount === undefined || meta.missedCount === null){
+          meta.missedCount = 1;
+        }
+        if(meta.missedAt === undefined || meta.missedAt === null) meta.missedAt = scheduledTs;
+      }
+    }
+    
     let createdTab = null;
+    
     if(s.openIn === 'window'){
-      await new Promise(res => chrome.windows.create({url, focused: !s.openInBackground}, w => { try{ if(w && w.tabs && w.tabs[0]) createdTab = w.tabs[0]; }catch(e){} res(); }));
+      await new Promise(res => {
+        chrome.windows.create({url, focused: !s.openInBackground}, w => {
+          try{
+            if(w && w.tabs && w.tabs[0]) createdTab = w.tabs[0];
+          }catch(e){}
+          res();
+        });
+      });
     } else {
-      // open as tab
-      await new Promise(res => chrome.tabs.create({url, active: !s.openInBackground}, t => { createdTab = t; res(); }));
+      await new Promise(res => {
+        chrome.tabs.create({url, active: !s.openInBackground}, t => {
+          createdTab = t;
+          res();
+        });
+      });
     }
 
     const tabId = createdTab && createdTab.id ? createdTab.id : null;
-
-    // Helper: inject a persistent toast into the tab (persists until dismissed or the page unloads)
-  const _injectToast = async (tabId, scheduleId, messageBody, whenLine, extIconUrl, extName) => {
+  const _injectToast = async (tabId, scheduleId, headline, whenLine, lateInline, extIconUrl, extName, urlArg, hasMessageArg) => {
       if(!tabId) return;
       try{
-        const run = (scheduleIdArg, messageBodyArg, whenLineArg, extIconArg, extNameArg) => {
-          try{
+          const run = (scheduleIdArg, headlineArg, whenLineArg, lateInlineArg, extIconArg, extNameArg, urlArgInner, hasMessageInner) => {
+        try{
             const id = `openwhen-toast-${String(scheduleIdArg)}`;
             if(document.getElementById(id)) return;
             const toast = document.createElement('div');
             toast.id = id;
-            toast.style.position = 'fixed';
-            toast.style.top = '0';
-            toast.style.left = '0';
-            toast.style.right = '0';
-            toast.style.zIndex = '2147483647';
-            toast.style.background = 'rgba(89, 15, 111, 0.95)';
-            toast.style.color = '#ffffff';
-            toast.style.fontFamily = 'sans-serif';
-            toast.style.display = 'flex';
-            toast.style.alignItems = 'center';
-            toast.style.justifyContent = 'space-between';
-            toast.style.padding = '10px 14px';
-            toast.style.boxShadow = '0 2px 6px rgba(0,0,0,0.35)';
-            toast.style.backdropFilter = 'saturate(120%) blur(2px)';
-            toast.style.borderBottom = '1px solid rgba(255,255,255,0.06)';
+            toast.className = 'openwhen-toast openwhen-banner';
 
-            // left area: extension icon + name, then content
-            const left = document.createElement('div');
-            left.style.display = 'flex';
-            left.style.alignItems = 'center';
-            left.style.gap = '12px';
-
-            const brand = document.createElement('div');
-            brand.style.display = 'flex';
-            brand.style.alignItems = 'center';
-            brand.style.gap = '8px';
-
-            if(extIconArg){
-              try{
+            // Icon (left)
+            const iconWrap = document.createElement('div');
+            iconWrap.className = 'openwhen-icon-wrap';
+            // add extension-provided icon if available
+            try{
+              if(extIconArg){
                 const img = document.createElement('img');
+                img.className = 'openwhen-icon';
                 img.src = extIconArg;
                 img.alt = extNameArg || '';
-                img.style.width = '28px';
-                img.style.height = '28px';
-                img.style.borderRadius = '4px';
-                img.style.flex = '0 0 auto';
-                brand.appendChild(img);
-              }catch(e){}
-            }
-            const titleSpan = document.createElement('div');
-            titleSpan.style.fontWeight = '700';
-            titleSpan.style.fontSize = '14px';
-            titleSpan.textContent = extNameArg || 'OpenWhen';
-            brand.appendChild(titleSpan);
+                iconWrap.appendChild(img);
+              }
+            }catch(e){}
+            // Content (center)
+            const content = document.createElement('div'); content.className = 'openwhen-content';
+            // top row to keep message stack and inline cancel together
+            const contentTop = document.createElement('div'); contentTop.className = 'openwhen-content-top';
+            const messageStack = document.createElement('div'); messageStack.className = 'openwhen-message-stack';
+            // If the schedule included a human message, render it as the bold headline.
+            if(hasMessageInner){ try{ const reminder = document.createElement('div'); reminder.className = 'openwhen-headline'; reminder.textContent = headlineArg; messageStack.appendChild(reminder); }catch(e){} }
+            // show url (if provided) between message and scheduled line. If there was no message, show the URL as the primary non-bold line.
+            if(typeof urlArgInner !== 'undefined' && urlArgInner){ try{
+                const headlineStr = (headlineArg || '').toString().trim();
+                const urlStr = (urlArgInner || '').toString().trim();
+                if(hasMessageInner){
+                  // only append url when it differs from headline
+                  if(urlStr && urlStr !== headlineStr){ const urlDiv = document.createElement('div'); urlDiv.className = 'openwhen-url'; urlDiv.textContent = urlArgInner; messageStack.appendChild(urlDiv); }
+                } else {
+                  // no message: show the URL as the primary line (non-bold)
+                  const urlDiv = document.createElement('div'); urlDiv.className = 'openwhen-url'; urlDiv.textContent = urlArgInner; messageStack.appendChild(urlDiv);
+                }
+              }catch(e){} }
+            if(whenLineArg){ const when = document.createElement('div'); when.className = 'openwhen-when'; when.textContent = whenLineArg; if(lateInlineArg){ const tag = document.createElement('span'); tag.className = 'openwhen-late'; tag.textContent = lateInlineArg; when.appendChild(tag); } messageStack.appendChild(when); }
+            contentTop.appendChild(messageStack);
+            content.appendChild(contentTop);
 
-            const content = document.createElement('div');
-            content.style.display = 'flex';
-            content.style.flexDirection = 'column';
-            content.style.gap = '4px';
-            content.style.maxWidth = 'calc(100% - 48px)';
-
-            if(messageBodyArg){
-              const reminder = document.createElement('div');
-              reminder.style.fontWeight = '600';
-              reminder.style.fontSize = '13px';
-              reminder.textContent = `Reminder: ${messageBodyArg}`;
-              content.appendChild(reminder);
-            }
-
-            const when = document.createElement('div');
-            when.style.fontSize = '12px';
-            when.style.opacity = '0.95';
-            when.textContent = whenLineArg || '';
-            content.appendChild(when);
-
-            left.appendChild(brand);
-            left.appendChild(content);
+            // Cancel (attached to content top on the right)
+            let cancelBtn = null;
+            try{
+              if(typeof scheduleIdArg !== 'undefined' && scheduleIdArg !== null){
+                cancelBtn = document.createElement('button');
+                cancelBtn.className = 'openwhen-cancel-btn';
+                cancelBtn.textContent = 'Cancel schedule';
+                cancelBtn.addEventListener('click', () => {
+                  try{
+                      cancelBtn.disabled = true;
+                      // Prefer direct runtime call when available (works when this code executes via executeScript in extension context)
+                      if(typeof chrome !== 'undefined' && chrome.runtime && typeof chrome.runtime.sendMessage === 'function'){
+                        try{
+                          // Retry helper: attempts sendMessage up to 3 times with small backoffs
+                          (function sendWithRetries(msg, attempts, delays, cb){
+                            let attempt = 0;
+                            function tryOnce(){
+                              try{
+                                chrome.runtime.sendMessage(msg, function(resp){
+                                  try{
+                                    const le = chrome.runtime && chrome.runtime.lastError;
+                                    if(!le){ return cb(resp, null); }
+                                    attempt++;
+                                    if(attempt < attempts){
+                                      const wait = delays[Math.min(attempt-1, delays.length-1)] || 100;
+                                      setTimeout(tryOnce, wait);
+                                    } else {
+                                      return cb(resp, le);
+                                    }
+                                  }catch(e){
+                                    attempt++;
+                                    if(attempt < attempts){ setTimeout(tryOnce, delays[Math.min(attempt-1, delays.length-1)] || 100); }
+                                    else { cb(null, e); }
+                                  }
+                                });
+                              }catch(err){ attempt++; if(attempt < attempts){ setTimeout(tryOnce, delays[Math.min(attempt-1, delays.length-1)] || 100); } else { cb(null, err); } }
+                            }
+                            tryOnce();
+                          })({ type: 'openwhen_cancel_schedule', id: scheduleIdArg }, 3, [100, 300], (resp, lastError) => {
+                            try{
+                              // if lastError is present after retries, re-enable button
+                              if(lastError){
+                                try{ cancelBtn.disabled = false; }catch(e){}
+                                try{
+                                  // preserve existing debug-flag path (no logging)
+                                  chrome.storage && chrome.storage.local && chrome.storage.local.get && chrome.storage.local.get(['openwhen_debug'], function(r){
+                                    try{ if(r && r.openwhen_debug){ /* debug mode: developer may inspect storage */ } }catch(e){}
+                                  });
+                                }catch(e){}
+                              } else if(resp && resp.ok){
+                                // Replace the cancel button with the confirmation toast
+                                try{ 
+                                  const small = document.createElement('div'); 
+                                  small.className = 'openwhen-cancel-toast'; 
+                                  small.textContent = 'Schedule cancelled';
+                                  // Insert toast before button, then remove button
+                                  cancelBtn.parentNode.insertBefore(small, cancelBtn);
+                                  cancelBtn.remove();
+                                  setTimeout(() => { 
+                                    try{ 
+                                      small.classList.add('openwhen-toast-fade'); 
+                                      setTimeout(() => { try{ small.remove(); }catch(e){} }, 350); 
+                                    }catch(e){} 
+                                  }, 2000);
+                                }catch(e){}
+                              } else { 
+                                try{ cancelBtn.disabled = false; }catch(e){} 
+                              }
+                            }catch(e){}
+                          });
+                        }catch(e){
+                          // fallback to postMessage bridge
+                          window.postMessage({ type: 'openwhen_cancel_schedule', id: scheduleIdArg }, '*');
+                          const onResp = (ev) => {
+                            try{
+                              const d = ev && ev.data;
+                              if(!d || d.type !== 'openwhen_cancel_response' || String(d.id) !== String(scheduleIdArg)) return;
+                              window.removeEventListener('message', onResp);
+                              if(d.ok){
+                                // Replace the cancel button with the confirmation toast
+                                try{ 
+                                  const small = document.createElement('div'); 
+                                  small.className = 'openwhen-cancel-toast'; 
+                                  small.textContent = 'Schedule cancelled';
+                                  // Insert toast before button, then remove button
+                                  cancelBtn.parentNode.insertBefore(small, cancelBtn);
+                                  cancelBtn.remove();
+                                  setTimeout(() => { 
+                                    try{ 
+                                      small.classList.add('openwhen-toast-fade'); 
+                                      setTimeout(() => { try{ small.remove(); }catch(e){} }, 350); 
+                                    }catch(e){} 
+                                  }, 2000);
+                                }catch(e){}
+                              } else { 
+                                try{ cancelBtn.disabled = false; }catch(e){} 
+                              }
+                            }catch(e){}
+                          };
+                          window.addEventListener('message', onResp);
+                        }
+                      } else {
+                        // no chrome.runtime available - use postMessage bridge
+                        window.postMessage({ type: 'openwhen_cancel_schedule', id: scheduleIdArg }, '*');
+                        const onResp = (ev) => {
+                          try{
+                            const d = ev && ev.data;
+                            if(!d || d.type !== 'openwhen_cancel_response' || String(d.id) !== String(scheduleIdArg)) return;
+                            window.removeEventListener('message', onResp);
+                            if(d.ok){
+                              // Replace the cancel button with the confirmation toast
+                              try{ 
+                                const small = document.createElement('div'); 
+                                small.className = 'openwhen-cancel-toast'; 
+                                small.textContent = 'Schedule cancelled';
+                                // Insert toast before button, then remove button
+                                cancelBtn.parentNode.insertBefore(small, cancelBtn);
+                                cancelBtn.remove();
+                                setTimeout(() => { 
+                                  try{ 
+                                    small.classList.add('openwhen-toast-fade'); 
+                                    setTimeout(() => { try{ small.remove(); }catch(e){} }, 350); 
+                                  }catch(e){} 
+                                }, 2000);
+                              }catch(e){}
+                            } else { 
+                              try{ cancelBtn.disabled = false; }catch(e){} 
+                            }
+                          }catch(e){}
+                        };
+                        window.addEventListener('message', onResp);
+                      }
+                  }catch(e){}
+                });
+              }
+            }catch(e){}
 
             const close = document.createElement('button');
             close.textContent = '\u00d7';
+            close.className = 'openwhen-close-btn';
             close.setAttribute('aria-label', 'Dismiss OpenWhen reminder');
-            close.style.background = 'transparent';
-            close.style.border = 'none';
-            close.style.color = '#fff';
-            close.style.fontSize = '18px';
-            close.style.cursor = 'pointer';
-            close.style.marginLeft = '12px';
-            close.addEventListener('click', () => { try{ toast.remove(); }catch(e){} });
+            close.addEventListener('click', () => { 
+              try{
+                const OPENWHEN_FADE_MS = 350;
+                requestAnimationFrame(() => { try{ toast.classList.add('openwhen-fade'); }catch(e){} });
+                try{ toast.addEventListener('transitionend', () => { try{ toast.remove(); }catch(e){} }, {once:true}); }catch(e){}
+                setTimeout(() => { try{ toast.remove(); }catch(e){} }, OPENWHEN_FADE_MS + 120);
+              }catch(e){ try{ toast.remove(); }catch(e){} }
+            });
 
-            toast.appendChild(left);
+            toast.appendChild(iconWrap);
+            toast.appendChild(content);
+            if(cancelBtn) contentTop.appendChild(cancelBtn);
             toast.appendChild(close);
             document.documentElement.appendChild(toast);
           }catch(e){}
         };
 
-        // Wait for tab to be complete then inject by executing the function in page context
         chrome.tabs.get(tabId, t => {
-          const doInject = () => {
-              try{
-              chrome.scripting.executeScript({
-                target: { tabId },
-                func: run,
-                args: [scheduleId, messageBody, whenLine, extIconUrl, extName]
-              });
-            }catch(e){}
+          const doInject = async () => {
+            try{
+                  // starting injection attempts for tab
+                  const cssFiles = ['banner.css'];
+                  const maxAttempts = 3;
+                  let injected = false;
+
+                  // ensure a small bridge is present in the page that forwards cancel postMessage -> chrome.runtime
+                  try{
+                    await chrome.scripting.executeScript({ target: { tabId }, func: function(){
+                      try{
+                        if(window.__openwhen_bridge_installed) return;
+                        window.__openwhen_bridge_installed = true;
+                        window.addEventListener('message', ev => {
+                          try{
+                            const d = ev && ev.data;
+                            if(!d || typeof d !== 'object') return;
+                            if(d.type === 'openwhen_cancel_schedule' && d.id){
+                              try{
+                                // retry helper within bridge to handle transient closed-port errors
+                                (function bridgeSendWithRetries(msg, attempts, delays, cb){
+                                  let attempt = 0;
+                                  function tryOnce(){
+                                    try{
+                                      chrome.runtime.sendMessage(msg, function(resp){
+                                        try{
+                                          const le = chrome.runtime && chrome.runtime.lastError;
+                                          if(!le){ return cb(resp, null); }
+                                          attempt++;
+                                          if(attempt < attempts){
+                                            const wait = delays[Math.min(attempt-1, delays.length-1)] || 100;
+                                            setTimeout(tryOnce, wait);
+                                          } else {
+                                            return cb(resp, le);
+                                          }
+                                        }catch(e){
+                                          attempt++;
+                                          if(attempt < attempts){ setTimeout(tryOnce, delays[Math.min(attempt-1, delays.length-1)] || 100); }
+                                          else { cb(null, e); }
+                                        }
+                                      });
+                                    }catch(err){ attempt++; if(attempt < attempts){ setTimeout(tryOnce, delays[Math.min(attempt-1, delays.length-1)] || 100); } else { cb(null, err); } }
+                                  }
+                                  tryOnce();
+                                })({ type: 'openwhen_cancel_schedule', id: d.id }, 3, [100, 300], function(resp, lastError){
+                                  try{
+                                    const ok = (!lastError) && !!(resp && resp.ok);
+                                    try{ window.postMessage({ type: 'openwhen_cancel_response', id: d.id, ok, lastError: lastError && String(lastError) }, '*'); }catch(e){}
+                                    try{
+                                      if(lastError){
+                                        // only log when debug enabled
+                                        chrome.storage && chrome.storage.local && chrome.storage.local.get && chrome.storage.local.get(['openwhen_debug'], function(r){
+                                          try{ if(r && r.openwhen_debug){ /* debug mode: developer may inspect storage */ } }catch(e){}
+                                        });
+                                      }
+                                    }catch(e){}
+                                  }catch(e){}
+                                });
+                              }catch(e){}
+                            }
+                          }catch(e){}
+                        });
+                      }catch(e){}
+                    }});
+                  }catch(e){}
+
+                  for(let attempt = 1; attempt <= maxAttempts && !injected; attempt++){
+                try{
+                  // insertCSS attempt
+                  await chrome.scripting.insertCSS({ target: { tabId }, files: cssFiles });
+                  // insertCSS OK on attempt
+                }catch(icErr){ /* insertCSS attempt failed */ }
+
+                try{
+                  // executeScript attempt
+                  await chrome.scripting.executeScript({ target: { tabId }, func: run, args: [scheduleId, headline, whenLine, lateInline, extIconUrl, extName, urlArg, hasMessageArg] });
+                  injected = true;
+                  // executeScript OK on attempt
+                  break;
+                }catch(esErr){ /* executeScript attempt failed */ }
+
+                // backoff before next attempt
+                const backoffs = [500, 1000, 2000];
+                const wait = backoffs[Math.min(attempt-1, backoffs.length-1)];
+                await new Promise(r => setTimeout(r, wait));
+              }
+
+                  if(!injected){
+                // Inline fallback if class/CSS approach didn't work
+                try{
+                  // attempting inline-styles fallback for tab
+                  await chrome.scripting.executeScript({
+                    target: { tabId },
+                    func: function(scheduleIdArg, headlineArg, whenLineArg, lateInlineArg, extIconArg, extNameArg, urlArgInner, hasMessageInner){
+                      try{
+                        const id = 'openwhen-toast-' + String(scheduleIdArg);
+                        if(document.getElementById(id)) return;
+                        const toast = document.createElement('div'); toast.id = id;
+                        toast.style.position = 'fixed';
+                        toast.style.top = '0'; toast.style.left = '0'; toast.style.right = '0';
+                        toast.style.zIndex = '2147483647';
+                        toast.style.background = 'rgba(89,15,111,0.95)';
+                        toast.style.color = '#fff';
+                        toast.style.display = 'flex';
+                        toast.style.alignItems = 'center';
+                        toast.style.gap = '12px';
+                        toast.style.padding = '10px 14px';
+                        toast.style.boxShadow = '0 2px 6px rgba(0,0,0,0.35)';
+                        toast.style.fontFamily = 'system-ui, -apple-system, "Segoe UI", Roboto, Arial';
+
+                        // Icon
+                        const iconWrap = document.createElement('div'); iconWrap.style.flex = '0 0 auto';
+                        if(extIconArg){ try{ const img = document.createElement('img'); img.src = extIconArg; img.alt = extNameArg || ''; img.style.width='48px'; img.style.height='48px'; img.style.borderRadius='6px'; img.style.objectFit='contain'; iconWrap.appendChild(img); }catch(e){} }
+
+                        // Content
+                        const content = document.createElement('div'); content.style.display='flex'; content.style.flexDirection='column'; content.style.gap='0'; content.style.lineHeight='1.05'; content.style.flex='1 1 auto'; content.style.minWidth='0';
+                        // Only render a bold headline when the schedule provided a human message.
+                        if(hasMessageInner){ try{ const reminder = document.createElement('div'); reminder.style.fontWeight='700'; reminder.style.fontSize='14px'; reminder.textContent = headlineArg; content.appendChild(reminder); }catch(e){} }
+                        if(typeof urlArgInner !== 'undefined' && urlArgInner){
+                          try{
+                            const headlineStr = (headlineArg || '').toString().trim();
+                            const urlStr = (urlArgInner || '').toString().trim();
+                            if(hasMessageInner){
+                              if(urlStr && urlStr !== headlineStr){ const urlDiv = document.createElement('div'); urlDiv.style.fontSize='13px'; urlDiv.style.opacity='0.95'; urlDiv.style.whiteSpace='nowrap'; urlDiv.style.overflow='hidden'; urlDiv.style.textOverflow='ellipsis'; urlDiv.textContent = urlArgInner; content.appendChild(urlDiv); }
+                            } else {
+                              // no message: show URL as primary non-bold line
+                              const urlDiv = document.createElement('div'); urlDiv.style.fontSize='13px'; urlDiv.style.opacity='0.95'; urlDiv.style.whiteSpace='nowrap'; urlDiv.style.overflow='hidden'; urlDiv.style.textOverflow='ellipsis'; urlDiv.textContent = urlArgInner; content.appendChild(urlDiv);
+                            }
+                          }catch(e){}
+                        }
+                        if(whenLineArg){ const when = document.createElement('div'); when.style.fontSize='12px'; when.style.opacity='0.95'; when.textContent = whenLineArg; if(lateInlineArg){ const tag = document.createElement('span'); tag.style.fontWeight='700'; tag.style.marginLeft='6px'; tag.textContent = lateInlineArg; when.appendChild(tag); } content.appendChild(when); }
+
+                        const _OPENWHEN_FADE_MS = 350;
+                        const maybeCancel = document.createElement('div'); maybeCancel.style.flex = '0 0 auto';
+                        if(typeof scheduleIdArg !== 'undefined' && scheduleIdArg !== null){
+                          const cancelBtn = document.createElement('button');
+                          cancelBtn.textContent='Cancel schedule';
+                          cancelBtn.style.background='#e53935'; cancelBtn.style.border='none'; cancelBtn.style.color='#fff'; cancelBtn.style.padding='8px 12px'; cancelBtn.style.borderRadius='6px'; cancelBtn.style.cursor='pointer'; cancelBtn.style.fontWeight='600';
+                          
+                          cancelBtn.addEventListener('click', () => {
+                            try{
+                              cancelBtn.disabled = true;
+                              window.postMessage({ type: 'openwhen_cancel_schedule', id: scheduleIdArg }, '*');
+                              const onResp = (ev) => {
+                                try{
+                                  const d = ev && ev.data;
+                                  if(!d || d.type !== 'openwhen_cancel_response' || String(d.id) !== String(scheduleIdArg)) return;
+                                  window.removeEventListener('message', onResp);
+                                  if(d.ok){ 
+                                    try{
+                                      const small = document.createElement('div');
+                                      small.className = 'openwhen-cancel-toast';
+                                      small.textContent = 'Schedule cancelled';
+                                      small.style.fontSize = '12px';
+                                      small.style.color = '#fff';
+                                      small.style.padding = '8px 12px';
+                                      // Insert toast before button, then remove button
+                                      cancelBtn.parentNode.insertBefore(small, cancelBtn);
+                                      cancelBtn.remove();
+                                      setTimeout(() => { small.classList.add('openwhen-toast-fade'); setTimeout(() => small.remove(), 350); }, 2000);
+                                    }catch(e){}
+                                  }
+                                  else { 
+                                    try{ cancelBtn.disabled = false; }catch(e){} 
+                                  }
+                                }catch(e){}
+                              };
+                              window.addEventListener('message', onResp);
+                            }catch(e){}
+                          });
+                          maybeCancel.appendChild(cancelBtn);
+                        }
+
+                        const close = document.createElement('button'); close.textContent='\u00d7'; close.style.background='transparent'; close.style.border='none'; close.style.color='#fff'; close.style.fontSize='18px'; close.style.cursor='pointer'; close.style.marginLeft='12px'; close.addEventListener('click', () => {
+                          const OPENWHEN_FADE_MS = 350;
+                          try{ requestAnimationFrame(() => { try{ toast.classList.add('openwhen-fade'); }catch(e){} }); try{ toast.addEventListener('transitionend', () => { try{ toast.remove(); }catch(e){} }, {once:true}); }catch(e){} setTimeout(() => { try{ toast.remove(); }catch(e){} }, OPENWHEN_FADE_MS + 120); }catch(e){ try{ toast.remove(); }catch(e){} }
+                        });
+
+                        toast.appendChild(iconWrap); toast.appendChild(content); toast.appendChild(maybeCancel); toast.appendChild(close); document.documentElement.appendChild(toast);
+                      }catch(e){}
+                    },
+                      args: [scheduleId, headline, whenLine, lateInline, extIconUrl, extName, urlArg]
+                  });
+                }catch(fbErr){}
+              }
+
+            }catch(err){}
           };
           if(t && t.status === 'complete') return doInject();
           const onUpdated = (updatedTabId, changeInfo) => {
@@ -369,22 +844,17 @@ async function openScheduleNow(s, opts){
             }
           };
           chrome.tabs.onUpdated.addListener(onUpdated);
-          // safety timeout: try injecting after a short delay even if tab doesn't report complete
           setTimeout(() => { try{ doInject(); chrome.tabs.onUpdated.removeListener(onUpdated); }catch(e){} }, 8000);
         });
       }catch(e){}
     };
 
-    // build message text
-    const messageBody = _buildMessage(s, opts || {});
+    const whenDate = _resolveWhenDate(s, meta);
+  const display = _buildDisplayContent(s, whenDate, meta);
 
-    // Always create a browser notification that can focus the tab when clicked
     try{
       const notifId = _makeNotificationId(s);
-      // ensure mapping exists immediately so clicks on the notification card
-      // focus the tab even if the create callback runs slightly later
       try{ if(tabId) _notifToTab.set(notifId, tabId); }catch(e){}
-      // try to use the tab's title and favicon to feel more "in-browser"
       let icon = chrome.runtime.getURL('icons/icon128.png');
       let titleText = `Opened by OpenWhen${s && s.source ? ` (${s.source})` : ''}`;
       try{
@@ -394,22 +864,21 @@ async function openScheduleNow(s, opts){
               if(t && t.favIconUrl) icon = t.favIconUrl;
               if(t && t.title) titleText = t.title;
             }catch(e){}
-            const whenText = _computeWhenDate(s, opts);
-            let whenLine = whenText ? `Scheduled for: ${whenText.toLocaleString()}` : 'Scheduled for: unknown';
-            if(opts && opts.late){ if(opts.missedCount && opts.missedCount > 1) whenLine += ` (missed ${opts.missedCount} occurrences)`; else if(opts.missedCount === 1) whenLine += ' (missed 1 occurrence)'; else whenLine += ' (missed)'; }
-            const reminderLine = messageBody ? `Reminder: ${messageBody}` : null;
+            const notifLines = [];
+            if(display.headline) notifLines.push(display.headline);
+            if(display.whenLine){
+              const whenWithLate = display.lateInline ? `${display.whenLine} ${display.lateInline}` : display.whenLine;
+              notifLines.push(whenWithLate);
+            }
             const notifOptions = {
               type: 'basic',
               title: titleText,
-              message: [reminderLine, whenLine].filter(Boolean).join('\n'),
+              message: notifLines.filter(Boolean).join('\n'),
               iconUrl: icon
             };
-            try{ chrome.notifications.create(notifId, notifOptions, nid => { try{ if(tabId){ _notifToTab.set(nid, tabId); chrome.storage.local.set({['_notif_'+nid]: tabId}); } }catch(e){} }); }catch(e){}
-            // If the tab later reports a favIconUrl, update the notification icon to match the page
+            try{ _createNotificationSafe(notifId, notifOptions, tabId); }catch(e){}
             try{
               if(tabId){
-                // (no-op placeholder removed; using onUpdated listener below)
-                // listen for the tab to update with a favIconUrl
                 chrome.tabs.onUpdated.addListener((updatedTabId, changeInfo, tabObj) => {
                   if(updatedTabId !== tabId) return;
                   if(changeInfo && changeInfo.favIconUrl){
@@ -417,50 +886,57 @@ async function openScheduleNow(s, opts){
                         try{
                           const resized = await fetchAndResizeIcon(changeInfo.favIconUrl, 32);
                           const useIcon = resized || changeInfo.favIconUrl;
-                          try{ chrome.notifications.update(notifId, { iconUrl: useIcon }); }catch(e){}
+                          try{ _updateNotificationSafe(notifId, { iconUrl: useIcon }); }catch(e){}
                         }catch(e){}
                       })();
-                      // remove listener via wrapper above
                     } else if(tabObj && tabObj.favIconUrl){
                       (async () => {
                         try{
                           const resized = await fetchAndResizeIcon(tabObj.favIconUrl, 32);
                           const useIcon = resized || tabObj.favIconUrl;
-                          try{ chrome.notifications.update(notifId, { iconUrl: useIcon }); }catch(e){}
+                          try{ _updateNotificationSafe(notifId, { iconUrl: useIcon }); }catch(e){}
                         }catch(e){}
                       })();
                     }
                 });
-                // also attempt immediate update if favIconUrl already present on tab object
-                try{ if(t && t.favIconUrl && t.favIconUrl !== icon){ (async ()=>{ const resized = await fetchAndResizeIcon(t.favIconUrl,32); const useIcon = resized || t.favIconUrl; try{ chrome.notifications.update(notifId, { iconUrl: useIcon }); }catch(e){} })(); } }catch(e){}
+                try{ if(t && t.favIconUrl && t.favIconUrl !== icon){ (async ()=>{ const resized = await fetchAndResizeIcon(t.favIconUrl,32); const useIcon = resized || t.favIconUrl; try{ _updateNotificationSafe(notifId, { iconUrl: useIcon }); }catch(e){} })(); } }catch(e){}
               }
             }catch(e){}
-            // inject a persistent toast inside the tab (notification still appears)
-            try{ const manifest = chrome.runtime.getManifest(); const extName = manifest && manifest.name ? manifest.name : 'OpenWhen'; const extIconUrl = chrome.runtime.getURL('icons/icon32.png'); _injectToast(tabId, s.id, messageBody, whenLine, extIconUrl, extName); }catch(e){}
+            try{
+              const manifest = chrome.runtime.getManifest();
+              const extName = manifest && manifest.name ? manifest.name : 'OpenWhen';
+              const extIconUrl = chrome.runtime.getURL('icons/icon48.png');
+              _injectToast(tabId, s.id, display.headline, display.whenLine, display.lateInline, extIconUrl, extName, s.url, display.hasMessage);
+            }catch(e){}
           });
         } else {
-          const whenText = (opts && opts.missedAt) ? new Date(opts.missedAt) : (s && s.when ? new Date(s.when) : null);
-          let whenLine = whenText ? `Scheduled for: ${whenText.toLocaleString()}` : 'Scheduled for: unknown';
-          if(opts && opts.late){ if(opts.missedCount && opts.missedCount > 1) whenLine += ` (missed ${opts.missedCount} occurrences)`; else if(opts.missedCount === 1) whenLine += ' (missed 1 occurrence)'; else whenLine += ' (missed)'; }
-          const reminderLine = messageBody ? `Reminder: ${messageBody}` : null;
+          const notifLines = [];
+          if(display.headline) notifLines.push(display.headline);
+          if(display.whenLine){
+            const whenWithLate = display.lateInline ? `${display.whenLine} ${display.lateInline}` : display.whenLine;
+            notifLines.push(whenWithLate);
+          }
           const notifOptions = {
             type: 'basic',
             title: titleText,
-            message: [reminderLine, whenLine].filter(Boolean).join('\n'),
+            message: notifLines.filter(Boolean).join('\n'),
             iconUrl: icon
           };
-          try{ chrome.notifications.create(notifId, notifOptions, nid => { try{ if(tabId){ _notifToTab.set(nid, tabId); chrome.storage.local.set({['_notif_'+nid]: tabId}); } }catch(e){} }); }catch(e){}
-          try{ const manifest = chrome.runtime.getManifest(); const extName = manifest && manifest.name ? manifest.name : 'OpenWhen'; const extIconUrl = chrome.runtime.getURL('icons/icon32.png'); _injectToast(tabId, s.id, messageBody, whenLine, extIconUrl, extName); }catch(e){}
+          try{ _createNotificationSafe(notifId, notifOptions, tabId); }catch(e){}
+            try{
+            const manifest = chrome.runtime.getManifest();
+            const extName = manifest && manifest.name ? manifest.name : 'OpenWhen';
+            const extIconUrl = chrome.runtime.getURL('icons/icon48.png');
+            _injectToast(tabId, s.id, display.headline, display.whenLine, display.lateInline, extIconUrl, extName, s.url, display.hasMessage);
+          }catch(e){}
         }
       }catch(e){}
     }catch(e){}
 
-    // Return fallback:true to indicate handled by notification
     return {delivered:false, fallback:true, tabId};
   }catch(e){ return {delivered:false, fallback:true, tabId:null}; }
 }
 
-// When a notification is clicked, focus the tab it opened (if still available)
 chrome.notifications.onClicked.addListener(async notifId => {
   try{
     let tabId = _notifToTab.get(notifId);
@@ -471,20 +947,15 @@ chrome.notifications.onClicked.addListener(async notifId => {
       try{ const tab = await new Promise(res => chrome.tabs.get(tabId, res)); if(tab && tab.windowId !== undefined){ chrome.windows.update(tab.windowId, {focused:true}); chrome.tabs.update(tabId, {active:true}); } }
       catch(e){}
     }
-    // clear notification and remove persistent mapping
     try{ chrome.notifications.clear(notifId); }catch(e){}
     try{ chrome.storage.local.remove(['_notif_'+notifId]); }catch(e){}
   }catch(e){}
 });
 
-// Clean up persistent mapping when a notification is closed/dismissed
 chrome.notifications.onClosed.addListener((notifId, byUser) => {
   try{
     try{ chrome.storage.local.remove(['_notif_'+notifId]); }catch(e){}
     try{ _notifToTab.delete(notifId); }catch(e){}
   }catch(e){}
 });
-
-// handle notification button clicks (Focus / Dismiss)
-// (Notification buttons removed; clicking the notification card focuses the tab.)
 

@@ -7,6 +7,33 @@ The format is based on "Keep a Changelog" and this project adheres to
 
 ## [Unreleased]
 
+## [1.1.0] - 2025-10-25
+
+### Added
+- Browser notifications when scheduled URLs are opened, with clickable notifications to focus the opened tab.
+- Favicon fetching and display in notifications, with automatic resizing to 32x32 PNG format.
+- Persistent notification-to-tab mapping to enable focusing tabs from notification clicks even after service worker restarts.
+- Retry logic for notification creation when image downloads fail, with automatic fallback to extension icon.
+- Enhanced date computation for displaying scheduled times in notifications and banners, including support for late/missed occurrences.
+- Cancel button in injected page banners to immediately cancel a schedule directly from the opened page.
+- Inline confirmation toast when a schedule is cancelled from the banner.
+
+### Changed
+- Improved context menu handling for prefilling schedules from links and pages.
+- Enhanced options page to display schedule opening methods more clearly (tab/window, foreground/background).
+- Refactored notification and banner injection code for better reliability and error handling.
+- Updated CI workflow to support all branch triggers without restrictions.
+
+### Fixed
+- Tabs now open correctly when alarms fire, addressing Chrome Web Store review feedback about schedules not opening tabs.
+- Improved reliability of tab creation and content script injection with retry logic and fallback mechanisms.
+- Fixed notification icon updates to handle favicon changes after page load.
+- Enhanced error handling throughout to prevent silent failures.
+
+### Security & Privacy
+- All notification and tab operations remain local-only with no external network requests.
+- Notification mappings are stored in local storage and cleaned up when no longer needed.
+
 ## [1.0.0] - 2025-09-25
 
 ### Added

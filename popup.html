@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -7,39 +8,110 @@
   <link rel="stylesheet" href="styles.css">
   <style>
     /* Popup-specific overrides: match the Options layout but make schedule cards more compact */
-  /* Hard-coded popup width: 2/3 of 720px = 480px */
-  html, body { min-width: 480px; width: 480px; }
-    body.popup { padding:10px; }
-  /* make main slightly inset so scrollbars are avoided */
-  body.popup { --popup-inner-width: 440px; }
-  /* inner content width used by url/message and schedule area so right edges align */
-  body.popup main { width:95%; max-width: none; margin:0 auto; padding:12px; box-sizing:border-box; }
-    body.popup h1 { font-size:18px }
-  /* compact schedule cards so they fit better inside the popup */
-  /* schedule cards use the same inner width so they align with the URL/message boxes */
-  body.popup .schedule-item { padding:8px; margin-bottom:6px; width:var(--popup-inner-width); box-sizing:border-box; }
-    body.popup .schedule-meta { font-size:11px }
-    body.popup .small { font-size:11px }
-    body.popup .edit-btn, body.popup .delete-btn { padding:5px 6px; font-size:12px }
-    /* fallback maximum width kept in case a different page uses this file */
-    main{ max-width:720px }
-  /* ensure url and message inputs don't overflow the popup width */
-  /* constrain url and message to the inner width so they align with schedule items */
-  body.popup #url, body.popup #message { width:var(--popup-inner-width); max-width:100%; box-sizing:border-box; }
-  body.popup .label-inline { width:var(--popup-inner-width); }
-  body.popup .label-inline input { width:100%; box-sizing:border-box; }
+    /* Hard-coded popup width: 2/3 of 720px = 480px */
+    html,
+    body {
+      min-width: 480px;
+      width: 480px;
+    }
 
-  /* align the 'order by' label/select to the inner width (right edge) */
-  body.popup h2 { display:flex; align-items:center; justify-content:space-between; }
-  body.popup h2 > label { margin-left:12px; font-size:12px; min-width:0; }
-  body.popup h2 > label select { min-width:160px; }
-  /* ensure the order-by group visually aligns to the right edge of inner content */
-  body.popup h2 .order-wrap { width:var(--popup-inner-width); display:flex; justify-content:flex-end; }
+    body.popup {
+      padding: 10px;
+    }
+
+    /* make main slightly inset so scrollbars are avoided */
+    body.popup {
+      --popup-inner-width: 440px;
+    }
+
+    /* inner content width used by url/message and schedule area so right edges align */
+    body.popup main {
+      width: 95%;
+      max-width: none;
+      margin: 0 auto;
+      padding: 12px;
+      box-sizing: border-box;
+    }
+
+    body.popup h1 {
+      font-size: 18px
+    }
+
+    /* compact schedule cards so they fit better inside the popup */
+    /* schedule cards use the same inner width so they align with the URL/message boxes */
+    body.popup .schedule-item {
+      padding: 8px;
+      margin-bottom: 6px;
+      width: var(--popup-inner-width);
+      box-sizing: border-box;
+    }
+
+    body.popup .schedule-meta {
+      font-size: 11px
+    }
+
+    body.popup .small {
+      font-size: 11px
+    }
+
+    body.popup .edit-btn,
+    body.popup .delete-btn {
+      padding: 5px 6px;
+      font-size: 12px
+    }
+
+    /* fallback maximum width kept in case a different page uses this file */
+    main {
+      max-width: 720px
+    }
+
+    /* ensure url and message inputs don't overflow the popup width */
+    /* constrain url and message to the inner width so they align with schedule items */
+    body.popup #url,
+    body.popup #message {
+      width: var(--popup-inner-width);
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+
+    body.popup .label-inline {
+      width: var(--popup-inner-width);
+    }
+
+    body.popup .label-inline input {
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    /* align the 'order by' label/select to the inner width (right edge) */
+    body.popup h2 {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    body.popup h2>label {
+      margin-left: 12px;
+      font-size: 12px;
+      min-width: 0;
+    }
+
+    body.popup h2>label select {
+      min-width: 160px;
+    }
+
+    /* ensure the order-by group visually aligns to the right edge of inner content */
+    body.popup h2 .order-wrap {
+      width: var(--popup-inner-width);
+      display: flex;
+      justify-content: flex-end;
+    }
   </style>
 </head>
+
 <body class="popup">
   <main>
-  <h1><img src="icons/icon48.png" alt="OpenWhen" class="app-icon">OpenWhen</h1>
+    <h1><img src="icons/icon48.png" alt="OpenWhen" class="icon--lg icon--rounded">OpenWhen</h1>
     <section>
       <h2>settings</h2>
     </section>
@@ -125,4 +197,5 @@
   <script src="options.js"></script>
   <script src="popup_prefill.js"></script>
 </body>
+
 </html>

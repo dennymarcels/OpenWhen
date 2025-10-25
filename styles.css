@@ -23,11 +23,28 @@ input,select,button{font:inherit;padding:8px;border:1px solid #ddd;border-radius
 .label-inline input{flex:1;min-width:0}
 .actions{margin-top:12px}
 button{background:var(--openwhen-primary);color:#fff;border:none}
+.actions button + button{margin-left:8px}
+.secondary-btn{
+  background:transparent;
+  color:var(--openwhen-primary);
+  border:1px solid var(--openwhen-primary);
+}
+.secondary-btn:hover{background:rgba(45,124,255,0.08)}
+button:disabled{opacity:0.55;cursor:not-allowed}
 h2{text-transform:lowercase;margin-top:20px;display:flex;align-items:center;justify-content:space-between}
 h2 label{margin:0;font-size:12px}
 h2 select{min-width:160px}
 #schedulesList{list-style:none;padding:0;margin:0}
 .schedule-item{padding:10px;border:1px solid #eee;border-radius:6px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+.schedule-item.editing-schedule{
+  background:#e5e5ea;
+  border-color:#d0d0d6;
+  filter:saturate(0.6);
+}
+.schedule-item.editing-schedule .schedule-left{opacity:0.8}
+.schedule-item.editing-schedule .schedule-meta,
+.schedule-item.editing-schedule .small{color:#555}
+.schedule-item.editing-schedule button{pointer-events:none}
 .schedule-meta{font-size:12px;color:#555;text-transform:lowercase}
 .small{font-size:12px;color:#666}
 .delete-btn{background:#ff6b6b;border:none;color:#fff;padding:6px 8px;border-radius:6px}

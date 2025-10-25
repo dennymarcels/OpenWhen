@@ -13,6 +13,7 @@ coverage/
 
 # Editor directories and files
 .vscode/
+.github/
 .idea/
 
 # OS files
@@ -36,3 +37,6 @@ yarn-error.log*
 # Test output / Jest cache
 /.jest
 /.nyc_output
+
+# Design system (temporary)
+design-system/

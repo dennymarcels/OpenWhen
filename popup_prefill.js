@@ -6,7 +6,10 @@
             const u = res && res.openwhen_prefill_url;
             if (u) {
               const input = document.getElementById('url');
-              if (input) input.value = u;
+              if (input) {
+                input.value = u;
+                try{ if(window.sessionStorage) window.sessionStorage.setItem('openwhen_prefill_toast','1'); }catch(e){}
+              }
               try {
                 chrome.storage.local.remove(['openwhen_prefill_url']);
               } catch (e) {
@@ -20,7 +23,10 @@
                   const v = (tabs && tabs[0] && (tabs[0].url || tabs[0].pendingUrl)) ? (tabs[0].url || tabs[0].pendingUrl) : null;
                   if (v) {
                     const input = document.getElementById('url');
-                    if (input) input.value = v;
+                    if (input) {
+                      input.value = v;
+                      try{ if(window.sessionStorage) window.sessionStorage.setItem('openwhen_prefill_toast','1'); }catch(e){}
+                    }
                   }
                 });
               }

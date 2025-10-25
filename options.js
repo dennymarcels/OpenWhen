@@ -5,6 +5,52 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,8
 async function getSchedules(){ return new Promise(resolve => chrome.storage.local.get([SCHEDULES_KEY], res => resolve(res[SCHEDULES_KEY] || []))); }
 async function setSchedules(schedules){ return new Promise(resolve => { const o={}; o[SCHEDULES_KEY]=schedules; chrome.storage.local.set(o, resolve); }); }
 
+let currentEditingId = null;
+let formEl = null;
+let submitBtnEl = null;
+let cancelBtnEl = null;
+let updateModeFn = null;
+
+function setFormMode(mode){
+  const isEdit = mode === 'edit';
+  if(submitBtnEl){ submitBtnEl.textContent = isEdit ? 'edit schedule' : 'add schedule'; }
+  if(cancelBtnEl){ cancelBtnEl.hidden = !isEdit; }
+  if(formEl){
+    if(isEdit){ formEl.dataset.mode = 'edit'; }
+    else { formEl.dataset.mode = 'add'; }
+  }
+}
+
+function resetFormFields(){
+  if(!formEl) return;
+  formEl.reset();
+  if(typeof updateModeFn === 'function'){
+    try{ updateModeFn(); }catch(e){}
+  }
+}
+
+function enterEditMode(scheduleId){
+  currentEditingId = scheduleId != null ? String(scheduleId) : null;
+  setFormMode(currentEditingId ? 'edit' : 'add');
+  if(formEl){
+    if(currentEditingId){
+      formEl.dataset.editingId = currentEditingId;
+      try{ formEl.scrollIntoView({behavior:'smooth', block:'start'}); }catch(e){}
+    } else {
+      delete formEl.dataset.editingId;
+    }
+  }
+}
+
+function exitEditMode({resetForm = false} = {}){
+  currentEditingId = null;
+  setFormMode('add');
+  if(formEl){ delete formEl.dataset.editingId; }
+  if(resetForm) resetFormFields();
+}
+
+function isEditing(){ return currentEditingId !== null; }
+
 function computeNextForScheduleLocal(s){
   try{
     const now = new Date(); if(!s) return null;
@@ -37,7 +83,8 @@ function populateFormFromSchedule(s){
     const stopAfter = $('#stopAfter'); if(stopAfter) stopAfter.value = s.stopAfter ? String(s.stopAfter) : '';
     const message = $('#message'); if(message) message.value = s.message || '';
     const weeklyDays = $('#weeklyDays'); if(weeklyDays && Array.isArray(s.days)){ Array.from(weeklyDays.querySelectorAll('input[type=checkbox]')).forEach(cb => cb.checked = s.days.map(String).includes(String(cb.value))); }
-    try{ if(typeof updateMode === 'function') updateMode(); }catch(e){}
+  // Ensure the mode UI updates even when mode.value is set programmatically
+  try{ if(mode && typeof mode.dispatchEvent === 'function'){ mode.dispatchEvent(new Event('change', { bubbles: true })); } }catch(e){}
   }catch(e){}
 }
 function renderSchedules(list){
@@ -48,8 +95,11 @@ function renderSchedules(list){
   // For recurring schedules, expired when runCount >= stopAfter.
   // For once schedules, consider expired if it has run at least once.
   const isExpired = (s.type === 'once') ? (Number(s.runCount) >= 1) : (s.stopAfter && Number(s.runCount) >= Number(s.stopAfter));
-    const li = document.createElement('li');
-    li.className = 'schedule-item';
+  const li = document.createElement('li');
+  li.className = 'schedule-item';
+  const scheduleIdStr = String(s.id);
+  const isEditingThis = currentEditingId && scheduleIdStr === currentEditingId;
+  if(isEditingThis) li.classList.add('editing-schedule');
   const left = document.createElement('div');
   left.className = 'schedule-left';
     const title = document.createElement('div');
@@ -115,17 +165,14 @@ function renderSchedules(list){
     // Edit button - removes the schedule and populates the form for editing
   const edit = document.createElement('button');
   edit.type = 'button';
-  edit.className = 'edit-btn'; edit.textContent = 'edit';
+  edit.className = 'edit-btn'; edit.textContent = isEditingThis ? 'editing…' : 'edit';
+  if(isEditingThis) edit.disabled = true;
     edit.addEventListener('click', async (ev) => {
       ev.preventDefault(); ev.stopPropagation();
       try{
-        const schedules = await getSchedules();
-        const remaining = schedules.filter(x => String(x.id) !== String(s.id));
-        await setSchedules(remaining);
-        // populate the form with the selected schedule's data
         populateFormFromSchedule(s);
-        // ask background to rebuild alarms (do not open missed occurrences from UI actions)
-        chrome.runtime.sendMessage({type:'rebuild', suppressLate:true}, () => { renderSchedules(remaining); });
+        enterEditMode(scheduleIdStr);
+        try{ refresh(); }catch(e){}
   }catch(e){}
     });
     right.appendChild(edit);
@@ -133,13 +180,30 @@ function renderSchedules(list){
   const del = document.createElement('button');
   del.type = 'button';
   del.className = 'delete-btn'; del.textContent = 'delete';
+    if(isEditingThis) del.disabled = true;
     del.addEventListener('click', async (ev) => {
       ev.preventDefault(); ev.stopPropagation();
-      const schedules = await getSchedules();
-      const remaining = schedules.filter(x => String(x.id) !== String(s.id));
-      await setSchedules(remaining);
-      // notify background to rebuild alarms (do not open missed occurrences from UI actions)
-        chrome.runtime.sendMessage({type:'rebuild', suppressLate:true}, () => { renderSchedules(remaining); });
+      try{
+        del.disabled = true;
+        li.classList.add('ow-fade');
+            const finish = async () => {
+          try{
+            const schedules = await getSchedules();
+            const remaining = schedules.filter(x => String(x.id) !== String(s.id));
+            await setSchedules(remaining);
+            if(currentEditingId && String(s.id) === currentEditingId){ exitEditMode({resetForm:true}); }
+            chrome.runtime.sendMessage({type:'rebuild', suppressLate:true}, () => {
+              try{ chrome.runtime && chrome.runtime.lastError; }catch(e){}
+              try{ refresh(); }catch(e){}
+            });
+                // NOTE: do not show a 'Schedule removed' toast here. Removal confirmation should be shown
+                // only when the schedule is cancelled from the in-page banner (handled by the banner cancel toast).
+          }catch(e){}
+        };
+        li.addEventListener('transitionend', () => { finish(); }, {once:true});
+        // fallback in case transitionend doesn't fire
+        setTimeout(() => { finish(); }, 420);
+      }catch(e){}
     });
     right.appendChild(del);
 
@@ -183,6 +247,54 @@ window.addEventListener('DOMContentLoaded', () => {
   const weeklyDays = $('#weeklyDays');
 
   if(!form) return;
+
+  formEl = form;
+  submitBtnEl = $('#submitBtn');
+  cancelBtnEl = $('#cancelEdit');
+  updateModeFn = updateMode;
+  setFormMode(isEditing() ? 'edit' : 'add');
+
+  if(cancelBtnEl){
+    cancelBtnEl.addEventListener('click', ev => {
+      ev.preventDefault(); ev.stopPropagation();
+      exitEditMode({resetForm:true});
+      try{ refresh(); }catch(e){}
+    });
+  }
+
+  // Toast helper for options page (inject minimal styles when first used)
+  let __ow_toast_styles_installed = false;
+  function _ensureToastStyles(){
+    if(__ow_toast_styles_installed) return;
+    __ow_toast_styles_installed = true;
+    try{
+      const s = document.createElement('style'); s.type = 'text/css'; s.textContent = `
+        .ow-toast{position:fixed;right:16px;bottom:24px;background:rgba(30,30,30,0.95);color:#fff;padding:10px 14px;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.35);z-index:2147483650;font-size:13px;opacity:1;transition:opacity 300ms ease, transform 300ms ease}
+        .ow-toast.ow-toast-fade{opacity:0;transform:translateY(6px)}
+        .ow-fade{transition:opacity 240ms ease, transform 240ms ease;opacity:0 !important;transform:translateY(-8px) !important;pointer-events:none}
+      `;
+      document.head.appendChild(s);
+    }catch(e){}
+  }
+  function showOptionsToast(msg, duration = 3000){
+    try{
+      _ensureToastStyles();
+      const t = document.createElement('div'); t.className = 'ow-toast'; t.textContent = msg || '';
+      document.body.appendChild(t);
+      setTimeout(() => { try{ t.classList.add('ow-toast-fade'); setTimeout(() => { try{ t.remove(); }catch(e){} }, 320); }catch(e){} }, duration);
+    }catch(e){}
+  }
+
+  // expose toast helper to other popup scripts (popup_prefill.js) so they can show confirmation toasts
+  try{ window.showOptionsToast = showOptionsToast; }catch(e){}
+
+  // if another script (popup_prefill.js) set a session flag to show a toast after prefill, consume it now
+  try{
+    if(window.sessionStorage && window.sessionStorage.getItem('openwhen_prefill_toast')){
+      try{ showOptionsToast('Prefilled URL'); }catch(e){}
+      try{ window.sessionStorage.removeItem('openwhen_prefill_toast'); }catch(e){}
+    }
+  }catch(e){}
 
   function updateMode(){
     const val = mode ? mode.value : 'once';
@@ -278,21 +390,73 @@ window.addEventListener('DOMContentLoaded', () => {
     const normalized = normalizeUrl(url);
     if(!normalized){ alert('please enter a valid url'); return; }
 
-  const newSchedule = {id: uid(), url: normalized, openIn, openInBackground, type, message, runCount: 0};
-  if(type === 'once') newSchedule.when = when;
-  else if(type === 'daily') newSchedule.time = time;
-  else if(type === 'weekly') { 
-    if(!days || days.length === 0){ alert('please select at least one weekday for weekly schedules'); return; }
-    newSchedule.time = time; newSchedule.days = days; 
-  }
-  else if(type === 'monthly') { newSchedule.time = time; if(Number.isInteger(monthDay) && monthDay >=1 && monthDay <=31) newSchedule.day = monthDay; }
-  if(type !== 'once' && Number.isInteger(stopAfter) && stopAfter > 0) newSchedule.stopAfter = stopAfter;
+    const editing = isEditing();
+    const editingId = currentEditingId;
+    if(type === 'weekly' && (!days || days.length === 0)){ alert('please select at least one weekday for weekly schedules'); return; }
 
     const schedules = await getSchedules();
-    schedules.push(newSchedule);
-    await setSchedules(schedules);
-  // ask background to rebuild alarms (do not open missed occurrences from UI actions)
-    chrome.runtime.sendMessage({type:'rebuild', suppressLate:true}, resp => { try{ refresh(); }catch(e){} form.reset(); updateMode(); });
+    const nextSchedules = schedules.slice(0);
+
+    if(editing){
+      const idx = nextSchedules.findIndex(x => String(x.id) === editingId);
+      const base = idx >= 0 ? nextSchedules[idx] : null;
+      const updated = Object.assign({}, base || {}, {
+        id: base && base.id != null ? base.id : (editingId || (base && base.id) || uid()),
+        url: normalized,
+        openIn,
+        openInBackground,
+        type,
+        message
+      });
+      delete updated.when;
+      delete updated.time;
+      delete updated.days;
+      delete updated.day;
+      delete updated.stopAfter;
+      delete updated.__next;
+
+      if(type === 'once'){
+        updated.when = when;
+      } else if(type === 'daily'){
+        updated.time = time;
+      } else if(type === 'weekly'){
+        updated.time = time;
+        updated.days = days;
+      } else if(type === 'monthly'){
+        updated.time = time;
+        if(Number.isInteger(monthDay) && monthDay >= 1 && monthDay <= 31) updated.day = monthDay;
+      }
+
+      if(type !== 'once' && Number.isInteger(stopAfter) && stopAfter > 0){
+        updated.stopAfter = stopAfter;
+      }
+
+      if(!Number.isFinite(updated.runCount)) updated.runCount = 0;
+      if(idx >= 0){
+        nextSchedules[idx] = updated;
+      } else {
+        if(!updated.id) updated.id = editingId || uid();
+        nextSchedules.push(updated);
+      }
+    } else {
+      const newSchedule = {id: uid(), url: normalized, openIn, openInBackground, type, message, runCount: 0};
+      if(type === 'once') newSchedule.when = when;
+      else if(type === 'daily') newSchedule.time = time;
+      else if(type === 'weekly'){ newSchedule.time = time; newSchedule.days = days; }
+      else if(type === 'monthly'){ newSchedule.time = time; if(Number.isInteger(monthDay) && monthDay >=1 && monthDay <=31) newSchedule.day = monthDay; }
+      if(type !== 'once' && Number.isInteger(stopAfter) && stopAfter > 0) newSchedule.stopAfter = stopAfter;
+      nextSchedules.push(newSchedule);
+    }
+
+    await setSchedules(nextSchedules);
+    chrome.runtime.sendMessage({type:'rebuild', suppressLate:true}, resp => {
+      try{ chrome.runtime && chrome.runtime.lastError; }catch(e){}
+      try{
+        if(editing){ exitEditMode({resetForm:true}); showOptionsToast('Schedule updated'); }
+        else { resetFormFields(); showOptionsToast('Schedule added'); }
+      }catch(e){}
+      try{ refresh(); }catch(e){}
+    });
   });
 
   refresh();

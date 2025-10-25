@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -7,14 +8,23 @@
   <link rel="stylesheet" href="styles.css">
   <style>
     /* Small adjustments to make the sidebar compact */
-    body { margin: 8px; }
-    main { max-width: 420px; }
-    .actions { margin-top: 8px; }
+    body {
+      margin: 8px;
+    }
+
+    main {
+      max-width: 420px;
+    }
+
+    .actions {
+      margin-top: 8px;
+    }
   </style>
 </head>
+
 <body>
   <main>
-    <h1><img src="icons/icon48.png" alt="OpenWhen" class="app-icon">OpenWhen</h1>
+    <h1><img src="icons/icon48.png" alt="OpenWhen" class="icon--lg icon--rounded">OpenWhen</h1>
     <!-- Reuse the same content as options so it's familiar; options.js will wire behaviors -->
     <section>
       <h2>settings</h2>
@@ -100,4 +110,5 @@
   <script src="options.js"></script>
   <script src="sidebar_prefill.js"></script>
 </body>
+
 </html>

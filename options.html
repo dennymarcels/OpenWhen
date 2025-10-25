@@ -1,14 +1,16 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>OpenWhen — options</title>
   <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
   <main>
-  <h1><img src="icons/icon48.png" alt="OpenWhen" class="app-icon">OpenWhen</h1>
+    <h1><img src="icons/icon48.png" alt="OpenWhen" class="icon--lg icon--rounded">OpenWhen</h1>
     <section>
       <h2>settings</h2>
     </section>
@@ -71,7 +73,8 @@
       </label>
 
       <div class="actions">
-        <button type="submit">add schedule</button>
+        <button type="submit" id="submitBtn">add schedule</button>
+        <button type="button" id="cancelEdit" class="secondary-btn" hidden>cancel</button>
       </div>
     </form>
 
@@ -91,4 +94,5 @@
   </main>
   <script src="options.js"></script>
 </body>
+
 </html>
