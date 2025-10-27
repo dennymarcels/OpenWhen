@@ -178,12 +178,38 @@ function _resolveWhenDate(s, opts){
   return _computeWhenDate(s, opts);
 }
 
+function _formatScheduleDetails(schedule){
+  try{
+    if(!schedule || !schedule.type) return '';
+    if(schedule.type === 'once') return '[once]';
+    if(schedule.type === 'daily'){
+      const time = schedule.time || '00:00';
+      return `[daily @ ${time}]`;
+    }
+    if(schedule.type === 'weekly'){
+      const time = schedule.time || '00:00';
+      const days = schedule.days || [];
+      const dayNames = ['sun','mon','tue','wed','thu','fri','sat'];
+      const dayStr = days.map(d => dayNames[d] || '?').join(',');
+      return `[weekly @ ${dayStr} ${time}]`;
+    }
+    if(schedule.type === 'monthly'){
+      const time = schedule.time || '00:00';
+      const day = schedule.day || 1;
+      const suffix = day === 1 ? 'st' : day === 2 ? 'nd' : day === 3 ? 'rd' : 'th';
+      return `[monthly @ ${day}${suffix} ${time}]`;
+    }
+    return '';
+  }catch(e){ return ''; }
+}
+
 function _buildDisplayContent(schedule, whenDate, opts){
   const message = _buildMessage(schedule);
   const descriptor = _describeSchedule(schedule);
   const headline = message || descriptor || 'OpenWhen';
   const hasMessage = !!(schedule && typeof schedule.message === 'string' && schedule.message.trim());
-  const whenLine = whenDate ? `scheduled for: ${_formatDateShort(whenDate)}` : 'scheduled for: unknown';
+  const scheduleDetails = _formatScheduleDetails(schedule);
+  const whenLine = whenDate ? `scheduled for: ${_formatDateShort(whenDate)} ${scheduleDetails}` : `scheduled for: unknown ${scheduleDetails}`;
   let lateInline = null;
   if(opts && opts.late){
     const rawMissed = Number(opts.missedCount);
@@ -777,7 +803,7 @@ async function openScheduleNow(s, opts){
                             }
                           }catch(e){}
                         }
-                        if(whenLineArg){ const when = document.createElement('div'); when.style.fontSize='12px'; when.style.opacity='0.95'; when.textContent = whenLineArg; if(lateInlineArg){ const tag = document.createElement('span'); tag.style.fontWeight='700'; tag.style.marginLeft='6px'; tag.textContent = lateInlineArg; when.appendChild(tag); } content.appendChild(when); }
+                        if(whenLineArg){ const when = document.createElement('div'); when.style.fontSize='12px'; when.style.opacity='0.95'; when.textContent = whenLineArg; if(lateInlineArg){ const tag = document.createElement('span'); tag.style.fontWeight='700'; tag.style.marginLeft='6px'; tag.style.color='#ccc'; tag.textContent = lateInlineArg; when.appendChild(tag); } content.appendChild(when); }
 
                         const _OPENWHEN_FADE_MS = 350;
                         const maybeCancel = document.createElement('div'); maybeCancel.style.flex = '0 0 auto';

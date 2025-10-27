@@ -84,6 +84,11 @@
   margin: 0;
 }
 
+.openwhen-late {
+  color: #ccc;
+  margin-left: 6px;
+}
+
 .openwhen-close-btn {
   background: transparent;
   border: none;
