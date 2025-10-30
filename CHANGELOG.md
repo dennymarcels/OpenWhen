@@ -7,7 +7,16 @@ The format is based on "Keep a Changelog" and this project adheres to
 
 ## [Unreleased]
 
+## [1.1.0] - 2025-10-30
+
 ### Added
+- Browser notifications when scheduled URLs are opened, with clickable notifications to focus the opened tab.
+- Favicon fetching and display in notifications, with automatic resizing to 32x32 PNG format.
+- Persistent notification-to-tab mapping to enable focusing tabs from notification clicks even after service worker restarts.
+- Retry logic for notification creation when image downloads fail, with automatic fallback to extension icon.
+- Enhanced date computation for displaying scheduled times in notifications and banners, including support for late/missed occurrences.
+- Cancel button in injected page banners to immediately cancel a schedule directly from the opened page.
+- Inline confirmation toast when a schedule is cancelled from the banner.
 - Real-time search functionality for filtering schedules by URL or message content as you type.
 - Website favicons displayed next to URLs in schedule list items using Google's favicon service.
 - Enhanced sorting options with ascending/descending directions for all sort criteria:
@@ -18,37 +27,22 @@ The format is based on "Keep a Changelog" and this project adheres to
 - Cancel button to exit edit mode and return to add mode.
 
 ### Changed
+- Improved context menu handling for prefilling schedules from links and pages.
+- Enhanced options page to display schedule opening methods more clearly (tab/window, foreground/background).
+- Refactored notification and banner injection code for better reliability and error handling.
+- Updated CI workflow to support all branch triggers without restrictions.
 - Improved schedule list display with favicon icons for better visual identification.
 - Enhanced h1 title/icon alignment using flexbox for consistent vertical centering across options and popup pages.
 - Refactored schedule rendering to support favicon display with graceful fallback for failed icon loads.
 - Updated default sort order to "created (newest → oldest)" for better usability.
 
 ### Fixed
-- Icon and title alignment now properly centered with appropriate spacing (8px gap).
-- Search bar styling optimized for both options and popup pages with responsive width.
-
-## [1.1.0] - 2025-10-25
-
-### Added
-- Browser notifications when scheduled URLs are opened, with clickable notifications to focus the opened tab.
-- Favicon fetching and display in notifications, with automatic resizing to 32x32 PNG format.
-- Persistent notification-to-tab mapping to enable focusing tabs from notification clicks even after service worker restarts.
-- Retry logic for notification creation when image downloads fail, with automatic fallback to extension icon.
-- Enhanced date computation for displaying scheduled times in notifications and banners, including support for late/missed occurrences.
-- Cancel button in injected page banners to immediately cancel a schedule directly from the opened page.
-- Inline confirmation toast when a schedule is cancelled from the banner.
-
-### Changed
-- Improved context menu handling for prefilling schedules from links and pages.
-- Enhanced options page to display schedule opening methods more clearly (tab/window, foreground/background).
-- Refactored notification and banner injection code for better reliability and error handling.
-- Updated CI workflow to support all branch triggers without restrictions.
-
-### Fixed
 - Tabs now open correctly when alarms fire, addressing Chrome Web Store review feedback about schedules not opening tabs.
 - Improved reliability of tab creation and content script injection with retry logic and fallback mechanisms.
 - Fixed notification icon updates to handle favicon changes after page load.
 - Enhanced error handling throughout to prevent silent failures.
+- Icon and title alignment now properly centered with appropriate spacing (8px gap).
+- Search bar styling optimized for both options and popup pages with responsive width.
 
 ### Security & Privacy
 - All notification and tab operations remain local-only with no external network requests.
