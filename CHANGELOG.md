@@ -7,6 +7,26 @@ The format is based on "Keep a Changelog" and this project adheres to
 
 ## [Unreleased]
 
+### Added
+- Real-time search functionality for filtering schedules by URL or message content as you type.
+- Website favicons displayed next to URLs in schedule list items using Google's favicon service.
+- Enhanced sorting options with ascending/descending directions for all sort criteria:
+  - Created (newest → oldest / oldest → newest)
+  - Next trigger time (next → farthest / farthest → next)
+  - Times triggered (highest → lowest / lowest → highest)
+- Edit mode functionality with visual feedback, allowing users to modify existing schedules directly from the options page.
+- Cancel button to exit edit mode and return to add mode.
+
+### Changed
+- Improved schedule list display with favicon icons for better visual identification.
+- Enhanced h1 title/icon alignment using flexbox for consistent vertical centering across options and popup pages.
+- Refactored schedule rendering to support favicon display with graceful fallback for failed icon loads.
+- Updated default sort order to "created (newest → oldest)" for better usability.
+
+### Fixed
+- Icon and title alignment now properly centered with appropriate spacing (8px gap).
+- Search bar styling optimized for both options and popup pages with responsive width.
+
 ## [1.1.0] - 2025-10-25
 
 ### Added
