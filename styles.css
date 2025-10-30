@@ -1,109 +1,356 @@
-:root{
+:root {
   --openwhen-primary: #2d7cff;
   --openwhen-bg: #f7f7f8;
   --openwhen-panel: #fff;
 }
-html,body{height:100%;}
-body{font-family:system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; background:var(--openwhen-bg); color:#111; margin:0; padding:20px;}
-main{max-width:720px;margin:0 auto;background:var(--openwhen-panel);padding:18px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.05)}
-h1{margin:0 0 12px;font-size:20px;text-transform:none}
-h1 .app-icon{width:48px;height:48px;vertical-align:middle;margin-right:12px;border-radius:8px;object-fit:cover}
-label{display:block;margin:10px 0;font-size:13px;text-transform:lowercase}
-input,select,button{font:inherit;padding:8px;border:1px solid #ddd;border-radius:6px}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+  background: var(--openwhen-bg);
+  color: #111;
+  margin: 0;
+  padding: 20px;
+}
+
+main {
+  max-width: 720px;
+  margin: 0 auto;
+  background: var(--openwhen-panel);
+  padding: 18px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05)
+}
+
+h1 {
+  margin: 0 0 12px;
+  font-size: 20px;
+  text-transform: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+h1 .app-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+label {
+  display: block;
+  margin: 10px 0;
+  font-size: 13px;
+  text-transform: lowercase
+}
+
+input,
+select,
+button {
+  font: inherit;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 6px
+}
 
 /* widen the main text inputs so they fill the form area */
-#url, #message{
-  display:block;
-  width:100%;
-  box-sizing:border-box;
+#url,
+#message {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 /* inline label where the label text sits inline and the input fills the remainder */
-.label-inline{display:flex;align-items:center;gap:8px}
-.label-inline input{flex:1;min-width:0}
-.actions{margin-top:12px}
-button{background:var(--openwhen-primary);color:#fff;border:none}
-.actions button + button{margin-left:8px}
-.secondary-btn{
-  background:transparent;
-  color:var(--openwhen-primary);
-  border:1px solid var(--openwhen-primary);
+.label-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px
 }
-.secondary-btn:hover{background:rgba(45,124,255,0.08)}
-button:disabled{opacity:0.55;cursor:not-allowed}
-h2{text-transform:lowercase;margin-top:20px;display:flex;align-items:center;justify-content:space-between}
-h2 label{margin:0;font-size:12px}
-h2 select{min-width:160px}
-#schedulesList{list-style:none;padding:0;margin:0}
-.schedule-item{padding:10px;border:1px solid #eee;border-radius:6px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
-.schedule-item.editing-schedule{
-  background:#e5e5ea;
-  border-color:#d0d0d6;
-  filter:saturate(0.6);
-}
-.schedule-item.editing-schedule .schedule-left{opacity:0.8}
-.schedule-item.editing-schedule .schedule-meta,
-.schedule-item.editing-schedule .small{color:#555}
-.schedule-item.editing-schedule button{pointer-events:none}
-.schedule-meta{font-size:12px;color:#555;text-transform:lowercase}
-.small{font-size:12px;color:#666}
-.delete-btn{background:#ff6b6b;border:none;color:#fff;padding:6px 8px;border-radius:6px}
 
-.expired-schedule .schedule-left{opacity:0.5}
-.expired-schedule .delete-btn{opacity:1}
-.edit-btn{background:#ffb000;border:none;color:#fff;padding:6px 8px;border-radius:6px;margin-bottom:6px}
+.label-inline input {
+  flex: 1;
+  min-width: 0
+}
+
+.actions {
+  margin-top: 12px
+}
+
+button {
+  background: var(--openwhen-primary);
+  color: #fff;
+  border: none
+}
+
+.actions button+button {
+  margin-left: 8px
+}
+
+.secondary-btn {
+  background: transparent;
+  color: var(--openwhen-primary);
+  border: 1px solid var(--openwhen-primary);
+}
+
+.secondary-btn:hover {
+  background: rgba(45, 124, 255, 0.08)
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed
+}
+
+h2 {
+  text-transform: lowercase;
+  margin-top: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between
+}
+
+h2 label {
+  margin: 0;
+  font-size: 12px
+}
+
+h2 select {
+  min-width: 160px
+}
+
+/* Search bar styling */
+.search-bar-container {
+  margin: 12px 0
+}
+
+#searchBar {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  font-size: 13px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: #fff;
+}
+
+#searchBar:focus {
+  outline: none;
+  border-color: var(--openwhen-primary)
+}
+
+/* Favicon styling */
+.schedule-title {
+  display: flex;
+  align-items: center;
+  gap: 8px
+}
+
+.schedule-favicon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+#schedulesList {
+  list-style: none;
+  padding: 0;
+  margin: 0
+}
+
+.schedule-item {
+  padding: 10px;
+  border: 1px solid #eee;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center
+}
+
+.schedule-item.editing-schedule {
+  background: #e5e5ea;
+  border-color: #d0d0d6;
+  filter: saturate(0.6);
+}
+
+.schedule-item.editing-schedule .schedule-left {
+  opacity: 0.8
+}
+
+.schedule-item.editing-schedule .schedule-meta,
+.schedule-item.editing-schedule .small {
+  color: #555
+}
+
+.schedule-item.editing-schedule button {
+  pointer-events: none
+}
+
+.schedule-meta {
+  font-size: 12px;
+  color: #555;
+  text-transform: lowercase
+}
+
+.small {
+  font-size: 12px;
+  color: #666
+}
+
+.delete-btn {
+  background: #ff6b6b;
+  border: none;
+  color: #fff;
+  padding: 6px 8px;
+  border-radius: 6px
+}
+
+.expired-schedule .schedule-left {
+  opacity: 0.5
+}
+
+.expired-schedule .delete-btn {
+  opacity: 1
+}
+
+.edit-btn {
+  background: #ffb000;
+  border: none;
+  color: #fff;
+  padding: 6px 8px;
+  border-radius: 6px;
+  margin-bottom: 6px
+}
 
 /* banner shown on opened pages */
-.openwhen-banner{
-  position:fixed;
-  top:0;
-  left:0;
-  right:0;
-  background:rgba(45,124,255,0.95);
-  color:#fff;
-  padding:10px 14px;
-  font-family:system-ui, -apple-system, 'Segoe UI', Roboto, Arial;
-  font-size:13px;
-  z-index:2147483647;
-  box-shadow:0 2px 8px rgba(0,0,0,0.2);
-  text-transform:lowercase;
-  display:flex;
-  align-items:flex-start;
-  gap:12px;
+.openwhen-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: rgba(45, 124, 255, 0.95);
+  color: #fff;
+  padding: 10px 14px;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Arial;
+  font-size: 13px;
+  z-index: 2147483647;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  text-transform: lowercase;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
 }
-.openwhen-banner .openwhen-content{flex:1}
-.openwhen-banner strong{display:block}
-.openwhen-close-btn{
-  background:transparent;
-  border:none;
-  color:#fff;
-  font-size:18px;
-  cursor:pointer;
-  padding:4px 8px;
-  line-height:1;
+
+.openwhen-banner .openwhen-content {
+  flex: 1
 }
+
+.openwhen-banner strong {
+  display: block
+}
+
+.openwhen-close-btn {
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px 8px;
+  line-height: 1;
+}
+
 /* push page content down while banner is visible using a css variable set by content script */
-body{margin-top: var(--openwhen-banner-height, 0px);}
+body {
+  margin-top: var(--openwhen-banner-height, 0px);
+}
 
 /* Compact popup adjustments: when the document body has class 'popup' we use smaller spacing
    and ensure elements wrap nicely in narrow extension popups. */
-body.popup{padding:8px;background:var(--openwhen-bg)}
-body.popup main{padding:10px}
-body.popup h2{font-size:13px}
-body.popup h2 select{min-width:120px}
-body.popup .label-inline{gap:6px}
-body.popup .label-inline input, body.popup input, body.popup select{padding:6px}
-body.popup .actions{margin-top:8px}
-body.popup .app-icon{width:36px;height:36px}
+body.popup {
+  padding: 8px;
+  background: var(--openwhen-bg)
+}
+
+body.popup main {
+  padding: 10px
+}
+
+body.popup h2 {
+  font-size: 13px
+}
+
+body.popup h2 select {
+  min-width: 120px
+}
+
+body.popup .label-inline {
+  gap: 6px
+}
+
+body.popup .label-inline input,
+body.popup input,
+body.popup select {
+  padding: 6px
+}
+
+body.popup .actions {
+  margin-top: 8px
+}
+
+body.popup h1 {
+  font-size: 18px;
+}
+
+body.popup .app-icon {
+  width: 36px;
+  height: 36px
+}
 
 /* Allow schedule-left to wrap so compact cards don't overflow */
-.schedule-item{gap:8px}
-.schedule-item > div{min-width:0}
-.schedule-item .schedule-left{flex:1;min-width:0}
-.schedule-item .schedule-left div{white-space:normal}
+.schedule-item {
+  gap: 8px
+}
 
-@media (max-width:420px){
-  main{padding:10px}
-  h1{font-size:16px}
-  .schedule-item{padding:8px}
+.schedule-item>div {
+  min-width: 0
+}
+
+.schedule-item .schedule-left {
+  flex: 1;
+  min-width: 0
+}
+
+.schedule-item .schedule-left div {
+  white-space: normal
+}
+
+/* Popup-specific search bar styling */
+body.popup #searchBar {
+  width: var(--popup-inner-width);
+  max-width: 100%;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+@media (max-width:420px) {
+  main {
+    padding: 10px
+  }
+
+  h1 {
+    font-size: 16px
+  }
+
+  .schedule-item {
+    padding: 8px
+  }
 }

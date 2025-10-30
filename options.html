@@ -83,12 +83,18 @@
         <label style="margin-left:12px;font-size:12px;text-transform:none;">
           order by
           <select id="orderBy">
-            <option value="created">created</option>
-            <option value="next">next trigger time</option>
-            <option value="times">times triggered</option>
+            <option value="created-desc">created (newest → oldest)</option>
+            <option value="created-asc">created (oldest → newest)</option>
+            <option value="next-asc">next trigger time (next → farthest)</option>
+            <option value="next-desc">next trigger time (farthest → next)</option>
+            <option value="times-desc">times triggered (highest → lowest)</option>
+            <option value="times-asc">times triggered (lowest → highest)</option>
           </select>
         </label>
       </h2>
+      <div class="search-bar-container">
+        <input type="text" id="searchBar" placeholder="search schedules by url or message..." autocomplete="off">
+      </div>
       <ul id="schedulesList"></ul>
     </section>
   </main>

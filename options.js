@@ -87,6 +87,15 @@ function populateFormFromSchedule(s){
   try{ if(mode && typeof mode.dispatchEvent === 'function'){ mode.dispatchEvent(new Event('change', { bubbles: true })); } }catch(e){}
   }catch(e){}
 }
+function getFaviconUrl(url){
+  try{
+    const u = new URL(url);
+    return `https://www.google.com/s2/favicons?domain=${u.hostname}&sz=32`;
+  }catch(e){
+    return null;
+  }
+}
+
 function renderSchedules(list){
   const ul = $('#schedulesList'); ul.innerHTML = '';
   list.forEach(s => {
@@ -103,7 +112,22 @@ function renderSchedules(list){
   const left = document.createElement('div');
   left.className = 'schedule-left';
     const title = document.createElement('div');
-    title.textContent = s.url.toLowerCase();
+    title.className = 'schedule-title';
+    
+    // Add favicon
+    const faviconUrl = getFaviconUrl(s.url);
+    if(faviconUrl){
+      const favicon = document.createElement('img');
+      favicon.src = faviconUrl;
+      favicon.className = 'schedule-favicon';
+      favicon.alt = '';
+      favicon.onerror = () => { favicon.style.display = 'none'; };
+      title.appendChild(favicon);
+    }
+    
+    const urlText = document.createElement('span');
+    urlText.textContent = s.url.toLowerCase();
+    title.appendChild(urlText);
     const meta = document.createElement('div');
     meta.className = 'schedule-meta';
   let whenText = '';
@@ -215,7 +239,7 @@ function renderSchedules(list){
 async function refresh(){
   const schedules = await getSchedules();
   // order by setting
-  const order = ($('#orderBy') && $('#orderBy').value) || 'created';
+  const order = ($('#orderBy') && $('#orderBy').value) || 'created-desc';
   const copy = (schedules || []).slice(0);
   // precompute a heuristic next timestamp for each schedule so 'next' ordering works
   copy.forEach(s => {
@@ -224,15 +248,38 @@ async function refresh(){
       s.__next = (ts !== null && typeof ts !== 'undefined') ? Number(ts) : Number.POSITIVE_INFINITY;
     }catch(e){ s.__next = Number.POSITIVE_INFINITY; }
   });
-  if(order === 'created'){
+  
+  // Parse order type and direction
+  if(order === 'created-desc'){
+    copy.sort((a,b) => (b.id || '').localeCompare(a.id || ''));
+  } else if(order === 'created-asc'){
     copy.sort((a,b) => (a.id || '').localeCompare(b.id || ''));
-  } else if(order === 'times'){
+  } else if(order === 'times-desc'){
     copy.sort((a,b) => (Number(b.runCount)||0) - (Number(a.runCount)||0));
-  } else if(order === 'next'){
-    // compute next trigger time heuristically: use computeNextForSchedule if available in background, otherwise approximate
+  } else if(order === 'times-asc'){
+    copy.sort((a,b) => (Number(a.runCount)||0) - (Number(b.runCount)||0));
+  } else if(order === 'next-asc'){
     copy.sort((a,b) => (Number(a.__next) || 0) - (Number(b.__next) || 0));
+  } else if(order === 'next-desc'){
+    copy.sort((a,b) => (Number(b.__next) || 0) - (Number(a.__next) || 0));
+  } else {
+    // fallback to created desc
+    copy.sort((a,b) => (b.id || '').localeCompare(a.id || ''));
   }
-  renderSchedules(copy);
+  
+  // Apply search filter
+  const searchBar = $('#searchBar');
+  if(searchBar && searchBar.value.trim()){
+    const query = searchBar.value.trim().toLowerCase();
+    const filtered = copy.filter(s => {
+      const url = (s.url || '').toLowerCase();
+      const message = (s.message || '').toLowerCase();
+      return url.includes(query) || message.includes(query);
+    });
+    renderSchedules(filtered);
+  } else {
+    renderSchedules(copy);
+  }
 }
 
 // ensure we refresh when background broadcasts changes even if DOMContentLoaded already fired
@@ -467,6 +514,16 @@ window.addEventListener('DOMContentLoaded', () => {
     if(orderBy){
       orderBy.addEventListener('change', () => {
     try{ refresh(); }catch(e){}
+      });
+    }
+  }catch(e){/* ignore */}
+
+  // wire up the search bar for real-time filtering
+  try{
+    const searchBar = $('#searchBar');
+    if(searchBar){
+      searchBar.addEventListener('input', () => {
+        try{ refresh(); }catch(e){}
       });
     }
   }catch(e){/* ignore */}
