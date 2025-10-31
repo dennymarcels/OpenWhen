@@ -7,6 +7,10 @@ The format is based on "Keep a Changelog" and this project adheres to
 
 ## [Unreleased]
 
+### Changed
+- Improved banner injection error handling to detect privileged pages (`chrome://`, `edge://`, etc.) and skip retry attempts.
+- Enhanced notification fallback behavior: notifications are now always shown regardless of banner injection success, providing reliable reminders even on pages where content scripts cannot be injected.
+
 ## [1.1.0] - 2025-10-30
 
 ### Added

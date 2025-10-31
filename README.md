@@ -12,11 +12,16 @@ Features
 - Create one-time or recurring schedules to open URLs.
 - Open in a tab or window, optionally in background.
 - Small in-page banner shows a reminder when a scheduled URL is opened.
+- Browser notifications provide reliable reminders on all pages (including privileged pages where banners cannot be injected).
 - Context-menu prefill: right-click a link or page -> "OpenWhen this link/page..." to prefill the options form.
 
 Permissions (manifest)
 - chrome.permissions: storage, alarms, tabs, windows, notifications, contextMenus
 - host_permissions: http://*/* and https://*/* (content script injects the banner only on web pages)
+
+Reminder Display Behavior
+- **HTTP/HTTPS pages**: Both in-page banner AND browser notification are shown
+- **Privileged pages** (`chrome://`, `edge://`, `file://`, etc.): Only browser notification is shown (banner injection fails silently as content scripts cannot access these pages)
 
 Load for testing (Edge / Chrome)
 1. Open edge://extensions or chrome://extensions
@@ -25,10 +30,13 @@ Load for testing (Edge / Chrome)
 4. Open the options page from the extension details and add schedules
 
 Quick tests to run
-- Add a once schedule for a near-future time and confirm the URL opens and banner appears.
+- Add a once schedule for a near-future time and confirm the URL opens, banner appears, and notification shows.
 - Test daily / weekly / monthly schedules and ensure runCount and lastRun update in the options list.
 - Monthly edge case: schedule on day 31 and verify it triggers on months with fewer days (it will use the last day of the month).
-- Confirm the banner does not inject on non-HTTP(S) pages (file://, chrome://, etc.).
+- Test privileged pages: schedule `chrome://extensions/` or `edge://extensions/` and verify that:
+  - The page opens correctly
+  - A browser notification appears
+  - No banner is injected (expected behavior - content scripts cannot access privileged pages)
 
 Packaging & publishing notes
 - Before publishing, bump `manifest.json` version (for example to `1.0.0`) and prepare release notes.
