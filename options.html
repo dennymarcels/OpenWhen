@@ -13,11 +13,31 @@
     <h1><img src="icons/icon48.png" alt="OpenWhen" class="icon--lg icon--rounded">OpenWhen</h1>
     <section>
       <h2>settings</h2>
+      <!-- Tab switcher for URL vs Window mode -->
+      <div class="schedule-mode-tabs">
+        <button type="button" class="tab-btn active" data-mode="url">url</button>
+        <button type="button" class="tab-btn" data-mode="window">window</button>
+      </div>
     </section>
     <form id="addForm">
-      <label class="label-inline">url
-        <input type="text" id="url" placeholder="https://example.com or example.com" required>
-      </label>
+      <!-- Single URL mode (default) -->
+      <div id="urlModeFields">
+        <label class="label-inline">url
+          <input type="text" id="url" placeholder="https://example.com or example.com" required>
+        </label>
+      </div>
+
+      <!-- Window mode: multiple URLs -->
+      <div id="windowModeFields" hidden>
+        <label>urls for window</label>
+        <div id="windowUrlsList">
+          <div class="window-url-item">
+            <input type="text" class="window-url-input" placeholder="https://example.com or example.com">
+            <button type="button" class="remove-url-btn" title="Remove URL">×</button>
+          </div>
+        </div>
+        <button type="button" id="addUrlBtn" class="secondary-btn">+ add url</button>
+      </div>
 
       <label>open in
         <select id="openIn">
