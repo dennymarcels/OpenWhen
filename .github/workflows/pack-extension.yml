@@ -56,16 +56,6 @@ jobs:
           echo "body<<EOF" >> $GITHUB_OUTPUT
           echo "$body" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-      - name: Create GitHub Release
-        id: create_release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
-          body: |
-            ${{ steps.release_body.outputs.body }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Find built ZIP
         id: find_zip
         run: |
@@ -78,11 +68,16 @@ jobs:
             exit 1
           fi
           echo "zip=$FILE" >> $GITHUB_OUTPUT
+          echo "zip_name=$(basename $FILE)" >> $GITHUB_OUTPUT
 
-      - name: Upload release asset
-        uses: actions/upload-release-asset@v1
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ${{ steps.find_zip.outputs.zip }}
-          asset_name: openwhen-${{ github.ref_name }}.zip
-          asset_content_type: application/zip
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body: |
+            ${{ steps.release_body.outputs.body }}
+          files: ${{ steps.find_zip.outputs.zip }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
