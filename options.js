@@ -265,15 +265,29 @@ function populateFormFromWindowSchedule(groupSchedules) {
       openInBackground.checked = !!representative.openInBackground;
 
     // Populate window URLs
-    const windowUrlsList = $('#windowUrlsList');
-    if (windowUrlsList) {
+    // Determine if we're in popup context
+    const isPopup =
+      typeof window.popupWindowTabs !== 'undefined' &&
+      window.popupWindowTabs.isPopupContext();
+
+    const container = isPopup ? $('#currentWindowTabs') : $('#windowUrlsList');
+
+    if (container) {
       // Clear existing URL fields
-      windowUrlsList.innerHTML = '';
+      container.innerHTML = '';
 
       // Add URL field for each schedule in group
       groupSchedules.forEach((s, idx) => {
         const item = document.createElement('div');
         item.className = 'window-url-item';
+        item.draggable = true;
+        item.dataset.index = idx;
+
+        // Drag handle
+        const dragHandle = document.createElement('span');
+        dragHandle.className = 'drag-handle';
+        dragHandle.textContent = '⋮⋮';
+        dragHandle.title = 'Drag to reorder';
 
         const input = document.createElement('input');
         input.type = 'text';
@@ -281,14 +295,16 @@ function populateFormFromWindowSchedule(groupSchedules) {
         input.placeholder = 'https://example.com or example.com';
         input.value = s.url || '';
 
+        // Remove button
         const removeBtn = document.createElement('button');
         removeBtn.type = 'button';
         removeBtn.className = 'remove-url-btn';
         removeBtn.textContent = '×';
+        removeBtn.title = 'Remove URL';
         removeBtn.addEventListener('click', () => {
           item.remove();
           // If only one field remains, don't allow removal
-          const remaining = windowUrlsList.querySelectorAll('.window-url-item');
+          const remaining = container.querySelectorAll('.window-url-item');
           if (remaining.length === 1) {
             const lastRemoveBtn = remaining[0].querySelector('.remove-url-btn');
             if (lastRemoveBtn) lastRemoveBtn.disabled = true;
@@ -300,9 +316,44 @@ function populateFormFromWindowSchedule(groupSchedules) {
           removeBtn.disabled = true;
         }
 
+        // Drag and drop event handlers
+        item.addEventListener('dragstart', (e) => {
+          item.classList.add('dragging');
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/html', item.innerHTML);
+        });
+
+        item.addEventListener('dragend', () => {
+          item.classList.remove('dragging');
+        });
+
+        item.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+
+          const draggingItem = container.querySelector('.dragging');
+          if (!draggingItem || draggingItem === item) return;
+
+          // Get all items and find positions
+          const items = Array.from(
+            container.querySelectorAll('.window-url-item')
+          );
+          const currentIndex = items.indexOf(item);
+          const draggingIndex = items.indexOf(draggingItem);
+
+          if (currentIndex > draggingIndex) {
+            // Insert after current item
+            item.parentNode.insertBefore(draggingItem, item.nextSibling);
+          } else {
+            // Insert before current item
+            item.parentNode.insertBefore(draggingItem, item);
+          }
+        });
+
+        item.appendChild(dragHandle);
         item.appendChild(input);
         item.appendChild(removeBtn);
-        windowUrlsList.appendChild(item);
+        container.appendChild(item);
       });
     }
 
@@ -933,15 +984,72 @@ window.addEventListener('DOMContentLoaded', () => {
     addUrlBtn.addEventListener('click', () => {
       const newItem = document.createElement('div');
       newItem.className = 'window-url-item';
-      newItem.innerHTML = `
-        <input type="text" class="window-url-input" placeholder="https://example.com or example.com">
-        <button type="button" class="remove-url-btn" title="Remove URL">×</button>
-      `;
+      newItem.draggable = true;
 
-      const removeBtn = newItem.querySelector('.remove-url-btn');
+      // Drag handle
+      const dragHandle = document.createElement('span');
+      dragHandle.className = 'drag-handle';
+      dragHandle.textContent = '⋮⋮';
+      dragHandle.title = 'Drag to reorder';
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'window-url-input';
+      input.placeholder = 'https://example.com or example.com';
+
+      // Remove button
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'remove-url-btn';
+      removeBtn.textContent = '×';
+      removeBtn.title = 'Remove URL';
       removeBtn.addEventListener('click', () => {
         newItem.remove();
+        // If only one field remains, don't allow removal
+        const remaining = windowUrlsList.querySelectorAll('.window-url-item');
+        if (remaining.length === 1) {
+          const lastRemoveBtn = remaining[0].querySelector('.remove-url-btn');
+          if (lastRemoveBtn) lastRemoveBtn.disabled = true;
+        }
       });
+
+      // Drag and drop event handlers
+      newItem.addEventListener('dragstart', (e) => {
+        newItem.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/html', newItem.innerHTML);
+      });
+
+      newItem.addEventListener('dragend', () => {
+        newItem.classList.remove('dragging');
+      });
+
+      newItem.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+
+        const draggingItem = windowUrlsList.querySelector('.dragging');
+        if (!draggingItem || draggingItem === newItem) return;
+
+        // Get all items and find positions
+        const items = Array.from(
+          windowUrlsList.querySelectorAll('.window-url-item')
+        );
+        const currentIndex = items.indexOf(newItem);
+        const draggingIndex = items.indexOf(draggingItem);
+
+        if (currentIndex > draggingIndex) {
+          // Insert after current item
+          newItem.parentNode.insertBefore(draggingItem, newItem.nextSibling);
+        } else {
+          // Insert before current item
+          newItem.parentNode.insertBefore(draggingItem, newItem);
+        }
+      });
+
+      newItem.appendChild(dragHandle);
+      newItem.appendChild(input);
+      newItem.appendChild(removeBtn);
 
       if (windowUrlsList) {
         windowUrlsList.appendChild(newItem);
