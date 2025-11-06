@@ -2,8 +2,8 @@ name: Pack extension
 
 on:
   push:
-    branches: [ main ]
-    tags: ['v*']
+    branches: [main]
+    tags: ["v*"]
   workflow_dispatch: {}
 
 permissions:
@@ -19,7 +19,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: "18"
       - name: Install dependencies
         run: npm ci
       - name: Run lint
@@ -81,3 +81,38 @@ jobs:
           files: ${{ steps.find_zip.outputs.zip }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Attempt automated Chrome Web Store publish (upload + publish)
+        env:
+          CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          CHROME_CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
+          CHROME_CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
+          CHROME_REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
+          ZIP_PATH: ${{ steps.find_zip.outputs.zip }}
+        run: |
+          set -e
+          missing=""
+          for v in CHROME_EXTENSION_ID CHROME_CLIENT_ID CHROME_CLIENT_SECRET CHROME_REFRESH_TOKEN; do
+            eval val="\$$v"
+            if [ -z "$val" ]; then missing="$missing $v"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "Missing secrets:$missing";
+            echo "Skipping automated publish; perform manual upload.";
+            exit 0;
+          fi
+          echo "Installing chrome-webstore-upload-cli..."
+          npm install --no-audit --no-fund chrome-webstore-upload-cli@2
+          echo "Uploading package $ZIP_PATH";
+          npx chrome-webstore-upload upload \
+            --extension-id "$CHROME_EXTENSION_ID" \
+            --client-id "$CHROME_CLIENT_ID" \
+            --client-secret "$CHROME_CLIENT_SECRET" \
+            --refresh-token "$CHROME_REFRESH_TOKEN" \
+            --source "$ZIP_PATH"
+          echo "Publishing extension";
+          npx chrome-webstore-upload publish \
+            --extension-id "$CHROME_EXTENSION_ID" \
+            --client-id "$CHROME_CLIENT_ID" \
+            --client-secret "$CHROME_CLIENT_SECRET" \
+            --refresh-token "$CHROME_REFRESH_TOKEN"
+          echo "Chrome Web Store upload & publish steps completed."
