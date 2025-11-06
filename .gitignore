@@ -13,7 +13,7 @@ coverage/
 
 # Editor directories and files
 .vscode/
-.github/
+.github/*.md
 .idea/
 
 # OS files

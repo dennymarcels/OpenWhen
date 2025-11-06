@@ -744,7 +744,13 @@ async function openScheduleNow(s, opts){
                   // insertCSS attempt
                   await chrome.scripting.insertCSS({ target: { tabId }, files: cssFiles });
                   // insertCSS OK on attempt
-                }catch(icErr){ /* insertCSS attempt failed */ }
+                }catch(icErr){ 
+                  // insertCSS attempt failed - could be privileged page (chrome://, edge://, etc.)
+                  if(icErr && icErr.message && (icErr.message.includes('Cannot access') || icErr.message.includes('chrome://') || icErr.message.includes('edge://'))){
+                    // Privileged page detected - skip remaining attempts
+                    break;
+                  }
+                }
 
                 try{
                   // executeScript attempt
@@ -752,7 +758,13 @@ async function openScheduleNow(s, opts){
                   injected = true;
                   // executeScript OK on attempt
                   break;
-                }catch(esErr){ /* executeScript attempt failed */ }
+                }catch(esErr){ 
+                  // executeScript attempt failed
+                  if(esErr && esErr.message && (esErr.message.includes('Cannot access') || esErr.message.includes('chrome://') || esErr.message.includes('edge://'))){
+                    // Privileged page detected - skip remaining attempts
+                    break;
+                  }
+                }
 
                 // backoff before next attempt
                 const backoffs = [500, 1000, 2000];
@@ -878,6 +890,7 @@ async function openScheduleNow(s, opts){
     const whenDate = _resolveWhenDate(s, meta);
   const display = _buildDisplayContent(s, whenDate, meta);
 
+    // Create notification (always shown, provides fallback for privileged pages where banner injection fails)
     try{
       const notifId = _makeNotificationId(s);
       try{ if(tabId) _notifToTab.set(notifId, tabId); }catch(e){}
