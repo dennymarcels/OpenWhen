@@ -155,8 +155,21 @@
     // Listen for schedule mode changes
     const observer = new MutationObserver(() => {
       const windowTabsList = document.getElementById('windowTabsList');
-      if (windowTabsList && !windowTabsList.hidden) {
+      const addForm = document.getElementById('addForm');
+
+      // Only auto-load tabs if NOT in edit mode
+      const isEditMode = addForm && addForm.dataset.editingId;
+
+      console.log('MutationObserver triggered');
+      console.log('windowTabsList hidden:', windowTabsList?.hidden);
+      console.log('isEditMode:', isEditMode);
+      console.log('dataset.editingId:', addForm?.dataset.editingId);
+
+      if (windowTabsList && !windowTabsList.hidden && !isEditMode) {
+        console.log('Auto-loading current window tabs');
         loadCurrentWindowTabs();
+      } else {
+        console.log('Skipping auto-load (edit mode or hidden)');
       }
     });
 
@@ -170,6 +183,7 @@
 
     // Wire up the + add url button for popup
     const addUrlBtnPopup = document.getElementById('addUrlBtnPopup');
+    const removeAllUrlsBtn = document.getElementById('removeAllUrlsBtn');
     const currentWindowTabs = document.getElementById('currentWindowTabs');
 
     if (addUrlBtnPopup && currentWindowTabs) {
@@ -251,6 +265,83 @@
         if (allRemoveBtns.length > 1) {
           allRemoveBtns.forEach((btn) => (btn.disabled = false));
         }
+      });
+    }
+
+    // Wire up the remove all button
+    if (removeAllUrlsBtn && currentWindowTabs) {
+      removeAllUrlsBtn.addEventListener('click', () => {
+        // Clear all URL items
+        currentWindowTabs.innerHTML = '';
+
+        // Add back a single empty field
+        const newItem = document.createElement('div');
+        newItem.className = 'window-url-item';
+        newItem.draggable = true;
+
+        // Drag handle
+        const dragHandle = document.createElement('span');
+        dragHandle.className = 'drag-handle';
+        dragHandle.textContent = '⋮⋮';
+        dragHandle.title = 'Drag to reorder';
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'window-url-input';
+        input.placeholder = 'https://example.com or example.com';
+
+        // Remove button (disabled since it's the only field)
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'remove-url-btn';
+        removeBtn.textContent = '×';
+        removeBtn.title = 'Remove URL';
+        removeBtn.disabled = true;
+        removeBtn.addEventListener('click', () => {
+          newItem.remove();
+          const remaining =
+            currentWindowTabs.querySelectorAll('.window-url-item');
+          if (remaining.length === 1) {
+            const lastRemoveBtn = remaining[0].querySelector('.remove-url-btn');
+            if (lastRemoveBtn) lastRemoveBtn.disabled = true;
+          }
+        });
+
+        // Drag and drop event handlers
+        newItem.addEventListener('dragstart', (e) => {
+          newItem.classList.add('dragging');
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/html', newItem.innerHTML);
+        });
+
+        newItem.addEventListener('dragend', () => {
+          newItem.classList.remove('dragging');
+        });
+
+        newItem.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+
+          const draggingItem = currentWindowTabs.querySelector('.dragging');
+          if (!draggingItem || draggingItem === newItem) return;
+
+          const items = Array.from(
+            currentWindowTabs.querySelectorAll('.window-url-item')
+          );
+          const currentIndex = items.indexOf(newItem);
+          const draggingIndex = items.indexOf(draggingItem);
+
+          if (currentIndex > draggingIndex) {
+            newItem.parentNode.insertBefore(draggingItem, newItem.nextSibling);
+          } else {
+            newItem.parentNode.insertBefore(draggingItem, newItem);
+          }
+        });
+
+        newItem.appendChild(dragHandle);
+        newItem.appendChild(input);
+        newItem.appendChild(removeBtn);
+        currentWindowTabs.appendChild(newItem);
       });
     }
   });

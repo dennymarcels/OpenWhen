@@ -456,6 +456,35 @@ h2 select {
   margin-bottom: 6px
 }
 
+.open-now-btn {
+  background: #4caf50;
+  border: none;
+  color: #fff;
+  padding: 6px 8px;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.open-now-btn:hover {
+  background: #45a049;
+}
+
+.open-now-btn:active {
+  background: #3d8b40;
+}
+
+.open-now-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.schedule-header .open-now-btn {
+  margin-bottom: 0;
+}
+
 /* banner shown on opened pages */
 .openwhen-banner {
   position: fixed;

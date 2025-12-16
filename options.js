@@ -3,6 +3,19 @@ const SCHEDULES_KEY = 'schedules';
 const $ = (sel) => document.querySelector(sel);
 const uid = () =>
   Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
+function getNextMinuteTimestamp() {
+  const now = new Date();
+  const nextMinute = new Date(now);
+  nextMinute.setMinutes(now.getMinutes() + 1);
+  nextMinute.setSeconds(0);
+  nextMinute.setMilliseconds(0);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${nextMinute.getFullYear()}-${pad(nextMinute.getMonth() + 1)}-${pad(
+    nextMinute.getDate()
+  )}T${pad(nextMinute.getHours())}:${pad(nextMinute.getMinutes())}`;
+}
+
 async function getSchedules() {
   return new Promise((resolve) =>
     chrome.storage.local.get([SCHEDULES_KEY], (res) =>
@@ -45,6 +58,13 @@ function setFormMode(mode) {
 function resetFormFields() {
   if (!formEl) return;
   formEl.reset();
+
+  // Set default timestamp to next minute for "once" schedules
+  const whenInput = $('#when');
+  if (whenInput) {
+    whenInput.value = getNextMinuteTimestamp();
+  }
+
   if (typeof updateModeFn === 'function') {
     try {
       updateModeFn();
@@ -154,8 +174,12 @@ function populateFormFromSchedule(s) {
     if (mode) mode.value = s.type || 'once';
     const when = $('#when');
     if (when) {
-      if (!s.when) when.value = '';
-      else if (
+      // For "once" schedules when editing, default to next minute
+      if (s.type === 'once') {
+        when.value = getNextMinuteTimestamp();
+      } else if (!s.when) {
+        when.value = '';
+      } else if (
         typeof s.when === 'string' &&
         /^\d{4}-\d{2}-\d{2}[T \t]\d{2}:\d{2}/.test(s.when) &&
         !/[zZ]|[+-]\d{2}:?\d{2}$/.test(s.when)
@@ -203,6 +227,17 @@ function populateFormFromSchedule(s) {
 
 function populateFormFromWindowSchedule(groupSchedules) {
   try {
+    try {
+      console.debug(
+        '[OpenWhen][Options] populateFormFromWindowSchedule called',
+        {
+          count: Array.isArray(groupSchedules) ? groupSchedules.length : 0,
+          ids: Array.isArray(groupSchedules)
+            ? groupSchedules.map((g) => g.id)
+            : null,
+        }
+      );
+    } catch (e) {}
     // Switch to window mode
     if (typeof updateScheduleModeFn === 'function') {
       updateScheduleModeFn('window');
@@ -216,8 +251,12 @@ function populateFormFromWindowSchedule(groupSchedules) {
     if (mode) mode.value = representative.type || 'once';
     const when = $('#when');
     if (when) {
-      if (!representative.when) when.value = '';
-      else if (
+      // For "once" schedules when editing, default to next minute
+      if (representative.type === 'once') {
+        when.value = getNextMinuteTimestamp();
+      } else if (!representative.when) {
+        when.value = '';
+      } else if (
         typeof representative.when === 'string' &&
         /^\d{4}-\d{2}-\d{2}[T \t]\d{2}:\d{2}/.test(representative.when) &&
         !/[zZ]|[+-]\d{2}:?\d{2}$/.test(representative.when)
@@ -379,10 +418,8 @@ function renderSchedules(list) {
   const ul = $('#schedulesList');
   ul.innerHTML = '';
 
-  // Group schedules by windowGroup
-  const windowGroups = new Map();
-  const singleSchedules = [];
-
+  // Group schedules by windowGroup for lookup
+  const windowGroupsMap = new Map();
   list.forEach((s) => {
     // defensive coercions
     const runc = Number(s && s.runCount) || 0;
@@ -391,51 +428,434 @@ function renderSchedules(list) {
     if (lrun) s.lastRun = lrun;
 
     if (s.windowGroup) {
-      if (!windowGroups.has(s.windowGroup)) {
-        windowGroups.set(s.windowGroup, []);
+      if (!windowGroupsMap.has(s.windowGroup)) {
+        windowGroupsMap.set(s.windowGroup, []);
       }
-      windowGroups.get(s.windowGroup).push(s);
-    } else {
-      singleSchedules.push(s);
+      windowGroupsMap.get(s.windowGroup).push(s);
     }
   });
 
-  // Render window groups first
-  windowGroups.forEach((groupSchedules, groupId) => {
-    if (groupSchedules.length === 0) return;
+  // Track which window groups we've already rendered
+  const renderedGroups = new Set();
 
-    // Sort by windowIndex
-    groupSchedules.sort((a, b) => (a.windowIndex || 0) - (b.windowIndex || 0));
+  // Render schedules in sorted order, but group window schedules together
+  list.forEach((s) => {
+    if (s.windowGroup) {
+      // Skip if we've already rendered this group
+      if (renderedGroups.has(s.windowGroup)) return;
+      renderedGroups.add(s.windowGroup);
 
-    // Use first schedule for metadata
-    const representative = groupSchedules[0];
-    const isExpired =
-      representative.type === 'once'
-        ? Number(representative.runCount) >= 1
-        : representative.stopAfter &&
-          Number(representative.runCount) >= Number(representative.stopAfter);
+      // Render the entire window group
+      const groupSchedules = windowGroupsMap.get(s.windowGroup);
+      if (groupSchedules.length === 0) return;
 
-    const li = document.createElement('li');
-    li.className = 'schedule-item';
-    const scheduleIdStr = String(representative.id);
-    const isEditingThis =
-      currentEditingId && scheduleIdStr === currentEditingId;
-    if (isEditingThis) li.classList.add('editing-schedule');
+      // Sort by windowIndex
+      groupSchedules.sort(
+        (a, b) => (a.windowIndex || 0) - (b.windowIndex || 0)
+      );
 
-    const left = document.createElement('div');
-    left.className = 'schedule-left';
+      // Use first schedule for metadata
+      const representative = groupSchedules[0];
+      // The window group id used for delete/edit operations
+      const groupId = representative.windowGroup;
+      const isExpired =
+        representative.type === 'once'
+          ? Number(representative.runCount) >= 1
+          : representative.stopAfter &&
+            Number(representative.runCount) >= Number(representative.stopAfter);
 
-    // Badge for window schedule
-    const badge = document.createElement('div');
-    badge.className = 'schedule-window-badge';
-    badge.textContent = 'window schedule';
-    left.appendChild(badge);
+      const li = document.createElement('li');
+      li.className = 'schedule-item';
+      li.style.position = 'relative'; // For absolute positioned button
+      const scheduleIdStr = String(representative.id);
+      const isEditingThis =
+        currentEditingId && scheduleIdStr === currentEditingId;
+      if (isEditingThis) li.classList.add('editing-schedule');
 
-    // URLs with favicons
-    groupSchedules.forEach((s) => {
-      const urlDiv = document.createElement('div');
-      urlDiv.className = 'schedule-title';
+      // Open button at top right (absolute positioned relative to li, overlays without displacing content)
+      const openNow = document.createElement('button');
+      openNow.type = 'button';
+      openNow.className = 'open-now-btn';
+      openNow.style.position = 'absolute';
+      openNow.style.top = '10px';
+      // align the 'open' button to the right of the card (same as single schedules)
+      openNow.style.right = '10px';
+      openNow.style.fontSize = '11px';
+      openNow.style.padding = '4px 8px';
+      openNow.style.zIndex = '10';
+      openNow.textContent = 'open';
+      openNow.addEventListener('click', async (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        try {
+          openNow.disabled = true;
+          openNow.textContent = 'opening...';
+          await new Promise((resolve) => {
+            chrome.runtime.sendMessage(
+              { type: 'openwhen_open_now', id: scheduleIdStr },
+              (response) => {
+                resolve(response);
+              }
+            );
+          });
+          openNow.textContent = 'opened!';
+          setTimeout(() => {
+            openNow.textContent = 'open';
+            openNow.disabled = false;
+            try {
+              refresh();
+            } catch (e) {
+              console.error('Failed to refresh after open now:', e);
+            }
+          }, 1500);
+        } catch (e) {
+          console.error('Failed to open schedule now:', e);
+          openNow.textContent = 'error';
+          setTimeout(() => {
+            openNow.textContent = 'open';
+            openNow.disabled = false;
+          }, 2000);
+        }
+      });
+      li.appendChild(openNow);
 
+      // Container for the card content
+      const cardContainer = document.createElement('div');
+      cardContainer.style.display = 'flex';
+      cardContainer.style.justifyContent = 'space-between';
+      cardContainer.style.alignItems = 'center';
+
+      const left = document.createElement('div');
+      left.className = 'schedule-left';
+
+      // Badge for window schedule
+      const badge = document.createElement('div');
+      badge.className = 'schedule-window-badge';
+      badge.textContent = 'window schedule';
+      badge.style.marginBottom = '8px';
+      left.appendChild(badge);
+
+      // URLs with favicons
+      groupSchedules.forEach((s, index) => {
+        const urlDiv = document.createElement('div');
+        urlDiv.className = 'schedule-title';
+        urlDiv.style.display = 'flex';
+        urlDiv.style.alignItems = 'center';
+
+        // Add spacing after every 5 tabs (instead of numbers)
+        const tabNumber = index + 1;
+        if (tabNumber % 5 === 0 && index < groupSchedules.length - 1) {
+          // Add extra margin bottom for spacing after every 5th tab
+          urlDiv.style.marginBottom = '8px';
+        }
+
+        const faviconUrl = getFaviconUrl(s.url);
+        if (faviconUrl) {
+          const favicon = document.createElement('img');
+          favicon.src = faviconUrl;
+          favicon.className = 'schedule-favicon';
+          favicon.alt = '';
+          favicon.onerror = () => {
+            favicon.style.display = 'none';
+          };
+          urlDiv.appendChild(favicon);
+        }
+
+        const urlText = document.createElement('span');
+        urlText.textContent = s.url.toLowerCase();
+        urlDiv.appendChild(urlText);
+        left.appendChild(urlDiv);
+      });
+
+      // Opens in window (with background option if applicable)
+      const openLine = document.createElement('div');
+      openLine.className = 'small';
+      if (representative.openInBackground) {
+        openLine.textContent = 'opens in window (background)';
+      } else {
+        openLine.textContent = 'opens in window';
+      }
+      left.appendChild(openLine);
+
+      // Schedule metadata (weekly @ time, etc)
+      const meta = document.createElement('div');
+      meta.className = 'schedule-meta';
+      let whenText = '';
+      if (representative.type === 'once')
+        whenText = `once @ ${new Date(representative.when).toLocaleString()}`;
+      else if (representative.type === 'daily')
+        whenText = `daily @ ${representative.time}`;
+      else if (representative.type === 'weekly')
+        whenText = `weekly @ ${representative.time} on ${(
+          representative.days || []
+        )
+          .map((d) => ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][d])
+          .join(', ')}`;
+      else if (representative.type === 'monthly')
+        whenText = `monthly @ ${representative.time} on day ${
+          representative.day || '?'
+        } of month`;
+      meta.textContent = whenText;
+      left.appendChild(meta);
+
+      // Message if present
+      const small = document.createElement('div');
+      small.className = 'small';
+      small.textContent = representative.message
+        ? representative.message.toLowerCase()
+        : '';
+      left.appendChild(small);
+
+      // Run counts
+      {
+        const progress = document.createElement('div');
+        progress.className = 'small';
+        const ran = Number(representative.runCount) || 0;
+        const limit = representative.stopAfter
+          ? Number(representative.stopAfter)
+          : null;
+        if (limit) {
+          progress.textContent = `${ran}/${limit} runs`;
+        } else {
+          progress.textContent = ran === 1 ? '1 run' : `${ran} runs`;
+        }
+        left.appendChild(progress);
+      }
+
+      // Last run display
+      const last = document.createElement('div');
+      last.className = 'small';
+      if (representative.lastRun) {
+        last.textContent = `last time opened ${new Date(
+          Number(representative.lastRun)
+        ).toLocaleString()}`;
+      } else {
+        last.textContent = 'last time opened never';
+      }
+      left.appendChild(last);
+
+      // Next occurrence display
+      const nextLine = document.createElement('div');
+      nextLine.className = 'small';
+      if (isExpired) {
+        nextLine.textContent = 'next time will open never';
+      } else {
+        const nextTs = computeNextForScheduleLocal(representative);
+        if (nextTs) {
+          nextLine.textContent = `next time will open ${new Date(
+            nextTs
+          ).toLocaleString()}`;
+        } else {
+          nextLine.textContent = 'next time will open never';
+        }
+      }
+      left.appendChild(nextLine);
+
+      if (isExpired) li.classList.add('expired-schedule');
+
+      const right = document.createElement('div');
+      right.style.position = 'absolute';
+      right.style.top = '50%';
+      right.style.right = '10px';
+      right.style.transform = 'translateY(-50%)';
+      right.style.display = 'flex';
+      right.style.flexDirection = 'row';
+      right.style.gap = '0px';
+      // Ensure the action buttons sit above the openNow control and receive pointer events
+      right.style.zIndex = '20';
+
+      // Edit button
+      const edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'edit-btn';
+      edit.style.marginBottom = '0';
+      edit.textContent = isEditingThis ? 'editing…' : 'edit';
+      if (isEditingThis) edit.disabled = true;
+      edit.addEventListener('click', async (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        try {
+          // Fetch fresh schedule data from storage
+          const allSchedules = await getSchedules();
+
+          // First, find the representative schedule by ID to get current windowGroup
+          const freshRepresentative = allSchedules.find(
+            (sch) => String(sch.id) === scheduleIdStr
+          );
+
+          console.log('Edit clicked - scheduleId:', scheduleIdStr);
+          console.log('Fresh representative:', freshRepresentative);
+
+          if (!freshRepresentative || !freshRepresentative.windowGroup) {
+            console.error('Window schedule not found or missing windowGroup');
+            return;
+          }
+
+          // Now filter all schedules with the same windowGroup
+          const freshGroup = allSchedules.filter(
+            (sch) => sch.windowGroup === freshRepresentative.windowGroup
+          );
+          freshGroup.sort(
+            (a, b) => (a.windowIndex || 0) - (b.windowIndex || 0)
+          );
+
+          console.log(
+            'Fresh group (sorted):',
+            freshGroup.map((s) => ({
+              id: s.id,
+              url: s.url,
+              windowIndex: s.windowIndex,
+            }))
+          );
+
+          // IMPORTANT: Enter edit mode FIRST to set dataset.editingId
+          // This prevents popup from auto-loading current window tabs
+          enterEditMode(scheduleIdStr);
+
+          // Then populate form with fresh window schedule data
+          populateFormFromWindowSchedule(freshGroup);
+          try {
+            refresh();
+          } catch (e) {
+            console.error('Failed to refresh after edit:', e);
+          }
+        } catch (e) {
+          console.error('Failed to populate form or enter edit mode:', e);
+        }
+      });
+      right.appendChild(edit);
+
+      // Delete button
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'delete-btn';
+      del.textContent = 'delete';
+      if (isEditingThis) del.disabled = true;
+      del.addEventListener('click', async (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        try {
+          del.disabled = true;
+          li.classList.add('ow-fade');
+          const finish = async () => {
+            try {
+              const schedules = await getSchedules();
+              const remaining = schedules.filter(
+                (x) => x.windowGroup !== groupId
+              );
+              await setSchedules(remaining);
+              if (
+                currentEditingId &&
+                groupSchedules.find((gs) => String(gs.id) === currentEditingId)
+              ) {
+                exitEditMode({ resetForm: true });
+              }
+              chrome.runtime.sendMessage(
+                { type: 'rebuild', suppressLate: true },
+                () => {
+                  try {
+                    chrome.runtime && chrome.runtime.lastError;
+                  } catch (e) {}
+                  try {
+                    refresh();
+                  } catch (e) {}
+                }
+              );
+            } catch (e) {}
+          };
+          li.addEventListener(
+            'transitionend',
+            () => {
+              finish();
+            },
+            { once: true }
+          );
+          setTimeout(() => {
+            finish();
+          }, 420);
+        } catch (e) {}
+      });
+      right.appendChild(del);
+
+      cardContainer.appendChild(left);
+      li.appendChild(cardContainer);
+      li.appendChild(right);
+      ul.appendChild(li);
+    } else {
+      // Render single schedule (not part of a window group)
+      // For recurring schedules, expired when runCount >= stopAfter.
+      // For once schedules, consider expired if it has run at least once.
+      const isExpired =
+        s.type === 'once'
+          ? Number(s.runCount) >= 1
+          : s.stopAfter && Number(s.runCount) >= Number(s.stopAfter);
+      const li = document.createElement('li');
+      li.className = 'schedule-item';
+      li.style.position = 'relative'; // For absolute positioned button
+      const scheduleIdStr = String(s.id);
+      const isEditingThis =
+        currentEditingId && scheduleIdStr === currentEditingId;
+      if (isEditingThis) li.classList.add('editing-schedule');
+
+      // Open button at top right (absolute positioned relative to li, overlays without displacing content)
+      const openNow = document.createElement('button');
+      openNow.type = 'button';
+      openNow.className = 'open-now-btn';
+      openNow.style.position = 'absolute';
+      openNow.style.top = '10px';
+      openNow.style.right = '10px';
+      openNow.style.fontSize = '11px';
+      openNow.style.padding = '4px 8px';
+      openNow.style.zIndex = '10';
+      openNow.textContent = 'open';
+      openNow.addEventListener('click', async (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        try {
+          openNow.disabled = true;
+          openNow.textContent = 'opening...';
+          await new Promise((resolve) => {
+            chrome.runtime.sendMessage(
+              { type: 'openwhen_open_now', id: scheduleIdStr },
+              (response) => {
+                resolve(response);
+              }
+            );
+          });
+          openNow.textContent = 'opened!';
+          setTimeout(() => {
+            openNow.textContent = 'open';
+            openNow.disabled = false;
+            try {
+              refresh();
+            } catch (e) {
+              console.error('Failed to refresh after open now:', e);
+            }
+          }, 1500);
+        } catch (e) {
+          console.error('Failed to open schedule now:', e);
+          openNow.textContent = 'error';
+          setTimeout(() => {
+            openNow.textContent = 'open';
+            openNow.disabled = false;
+          }, 2000);
+        }
+      });
+      li.appendChild(openNow);
+
+      // Container for the card content
+      const cardContainer = document.createElement('div');
+      cardContainer.style.display = 'flex';
+      cardContainer.style.justifyContent = 'space-between';
+      cardContainer.style.alignItems = 'center';
+
+      const left = document.createElement('div');
+      left.className = 'schedule-left';
+
+      const title = document.createElement('div');
+      title.className = 'schedule-title';
+
+      // Add favicon
       const faviconUrl = getFaviconUrl(s.url);
       if (faviconUrl) {
         const favicon = document.createElement('img');
@@ -445,368 +865,202 @@ function renderSchedules(list) {
         favicon.onerror = () => {
           favicon.style.display = 'none';
         };
-        urlDiv.appendChild(favicon);
+        title.appendChild(favicon);
       }
 
       const urlText = document.createElement('span');
       urlText.textContent = s.url.toLowerCase();
-      urlDiv.appendChild(urlText);
-      left.appendChild(urlDiv);
-    });
-
-    // Opens in window (with background option if applicable)
-    const openLine = document.createElement('div');
-    openLine.className = 'small';
-    if (representative.openInBackground) {
-      openLine.textContent = 'opens in window (background)';
-    } else {
-      openLine.textContent = 'opens in window';
-    }
-    left.appendChild(openLine);
-
-    // Schedule metadata (weekly @ time, etc)
-    const meta = document.createElement('div');
-    meta.className = 'schedule-meta';
-    let whenText = '';
-    if (representative.type === 'once')
-      whenText = `once @ ${new Date(representative.when).toLocaleString()}`;
-    else if (representative.type === 'daily')
-      whenText = `daily @ ${representative.time}`;
-    else if (representative.type === 'weekly')
-      whenText = `weekly @ ${representative.time} on ${(
-        representative.days || []
-      )
-        .map((d) => ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][d])
-        .join(', ')}`;
-    else if (representative.type === 'monthly')
-      whenText = `monthly @ ${representative.time} on day ${
-        representative.day || '?'
-      } of month`;
-    meta.textContent = whenText;
-    left.appendChild(meta);
-
-    // Message if present
-    const small = document.createElement('div');
-    small.className = 'small';
-    small.textContent = representative.message
-      ? representative.message.toLowerCase()
-      : '';
-    left.appendChild(small);
-
-    // Run counts
-    {
-      const progress = document.createElement('div');
-      progress.className = 'small';
-      const ran = Number(representative.runCount) || 0;
-      const limit = representative.stopAfter
-        ? Number(representative.stopAfter)
-        : null;
-      if (limit) {
-        progress.textContent = `${ran}/${limit} runs`;
+      title.appendChild(urlText);
+      const meta = document.createElement('div');
+      meta.className = 'schedule-meta';
+      let whenText = '';
+      if (s.type === 'once')
+        whenText = `once @ ${new Date(s.when).toLocaleString()}`;
+      else if (s.type === 'daily') whenText = `daily @ ${s.time}`;
+      else if (s.type === 'weekly')
+        whenText = `weekly @ ${s.time} on ${(s.days || [])
+          .map((d) => ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][d])
+          .join(', ')}`;
+      else if (s.type === 'monthly')
+        whenText = `monthly @ ${s.time} on day ${s.day || '?'} of month`;
+      meta.textContent = whenText;
+      const small = document.createElement('div');
+      small.className = 'small';
+      small.textContent = s.message ? s.message.toLowerCase() : '';
+      // append title first
+      left.appendChild(title);
+      // show how this will open right under the url
+      const openLine = document.createElement('div');
+      openLine.className = 'small';
+      if (s.openIn === 'window') {
+        openLine.textContent = 'opens in window';
+      } else if (s.openIn === 'tab') {
+        if (s.openInBackground) {
+          openLine.textContent = 'opens in tab (background)';
+        } else {
+          openLine.textContent = 'opens in tab';
+        }
       } else {
-        progress.textContent = ran === 1 ? '1 run' : `${ran} runs`;
+        // fallback for unexpected values
+        openLine.textContent = `opens in ${String(s.openIn || 'tab')}`;
       }
-      left.appendChild(progress);
-    }
-
-    // Last run display
-    const last = document.createElement('div');
-    last.className = 'small';
-    if (representative.lastRun) {
-      last.textContent = `last time opened ${new Date(
-        Number(representative.lastRun)
-      ).toLocaleString()}`;
-    } else {
-      last.textContent = 'last time opened never';
-    }
-    left.appendChild(last);
-
-    // Next occurrence display
-    const nextLine = document.createElement('div');
-    nextLine.className = 'small';
-    if (isExpired) {
-      nextLine.textContent = 'next time will open never';
-    } else {
-      const nextTs = computeNextForScheduleLocal(representative);
-      if (nextTs) {
-        nextLine.textContent = `next time will open ${new Date(
-          nextTs
+      left.appendChild(openLine);
+      left.appendChild(meta);
+      left.appendChild(small);
+      // show run counts for all schedules (including 'once')
+      {
+        const progress = document.createElement('div');
+        progress.className = 'small';
+        const ran = Number(s.runCount) || 0;
+        const limit = s.stopAfter ? Number(s.stopAfter) : null;
+        if (limit) {
+          progress.textContent = `${ran}/${limit} runs`;
+        } else {
+          progress.textContent = ran === 1 ? '1 run' : `${ran} runs`;
+        }
+        left.appendChild(progress);
+      }
+      // last run display (always show 'never' when absent)
+      const last = document.createElement('div');
+      last.className = 'small';
+      if (s.lastRun) {
+        last.textContent = `last time opened ${new Date(
+          Number(s.lastRun)
         ).toLocaleString()}`;
       } else {
-        nextLine.textContent = 'next time will open never';
+        last.textContent = 'last time opened never';
       }
-    }
-    left.appendChild(nextLine);
+      left.appendChild(last);
+      // next occurrence display (never if expired)
+      const nextLine = document.createElement('div');
+      nextLine.className = 'small';
+      if (isExpired) {
+        nextLine.textContent = 'next time will open never';
+      } else {
+        const nextTs = computeNextForScheduleLocal(s);
+        if (nextTs) {
+          nextLine.textContent = `next time will open ${new Date(
+            nextTs
+          ).toLocaleString()}`;
+        } else {
+          nextLine.textContent = 'next time will open never';
+        }
+      }
+      left.appendChild(nextLine);
+      // gray out expired schedules (do not remove by default)
+      if (isExpired) li.classList.add('expired-schedule');
 
-    if (isExpired) li.classList.add('expired-schedule');
+      const right = document.createElement('div');
+      right.style.position = 'absolute';
+      right.style.top = '50%';
+      right.style.right = '10px';
+      right.style.transform = 'translateY(-50%)';
+      right.style.display = 'flex';
+      right.style.flexDirection = 'row';
+      right.style.gap = '0px';
 
-    const right = document.createElement('div');
-
-    // Edit button
-    const edit = document.createElement('button');
-    edit.type = 'button';
-    edit.className = 'edit-btn';
-    edit.textContent = isEditingThis ? 'editing…' : 'edit';
-    if (isEditingThis) edit.disabled = true;
-    edit.addEventListener('click', async (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      try {
-        // Populate form with window schedule data
-        populateFormFromWindowSchedule(groupSchedules);
-        enterEditMode(scheduleIdStr);
+      // Edit button - removes the schedule and populates the form for editing
+      const edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'edit-btn';
+      edit.style.marginBottom = '0';
+      edit.textContent = isEditingThis ? 'editing…' : 'edit';
+      if (isEditingThis) edit.disabled = true;
+      edit.addEventListener('click', async (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
         try {
-          refresh();
-        } catch (e) {}
-      } catch (e) {}
-    });
-    right.appendChild(edit);
-
-    // Delete button
-    const del = document.createElement('button');
-    del.type = 'button';
-    del.className = 'delete-btn';
-    del.textContent = 'delete';
-    if (isEditingThis) del.disabled = true;
-    del.addEventListener('click', async (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      try {
-        del.disabled = true;
-        li.classList.add('ow-fade');
-        const finish = async () => {
           try {
-            const schedules = await getSchedules();
-            const remaining = schedules.filter(
-              (x) => x.windowGroup !== groupId
-            );
-            await setSchedules(remaining);
-            if (
-              currentEditingId &&
-              groupSchedules.find((gs) => String(gs.id) === currentEditingId)
-            ) {
-              exitEditMode({ resetForm: true });
-            }
-            chrome.runtime.sendMessage(
-              { type: 'rebuild', suppressLate: true },
-              () => {
-                try {
-                  chrome.runtime && chrome.runtime.lastError;
-                } catch (e) {}
-                try {
-                  refresh();
-                } catch (e) {}
-              }
+            console.debug(
+              '[OpenWhen][Options] single-schedule edit clicked',
+              scheduleIdStr
             );
           } catch (e) {}
-        };
-        li.addEventListener(
-          'transitionend',
-          () => {
-            finish();
-          },
-          { once: true }
-        );
-        setTimeout(() => {
-          finish();
-        }, 420);
-      } catch (e) {}
-    });
-    right.appendChild(del);
+          // Fetch fresh schedule data from storage
+          const allSchedules = await getSchedules();
+          const freshSchedule = allSchedules.find(
+            (sch) => String(sch.id) === scheduleIdStr
+          );
 
-    li.appendChild(left);
-    li.appendChild(right);
-    ul.appendChild(li);
-  });
-
-  // Render single schedules
-  singleSchedules.forEach((s) => {
-    // For recurring schedules, expired when runCount >= stopAfter.
-    // For once schedules, consider expired if it has run at least once.
-    const isExpired =
-      s.type === 'once'
-        ? Number(s.runCount) >= 1
-        : s.stopAfter && Number(s.runCount) >= Number(s.stopAfter);
-    const li = document.createElement('li');
-    li.className = 'schedule-item';
-    const scheduleIdStr = String(s.id);
-    const isEditingThis =
-      currentEditingId && scheduleIdStr === currentEditingId;
-    if (isEditingThis) li.classList.add('editing-schedule');
-    const left = document.createElement('div');
-    left.className = 'schedule-left';
-    const title = document.createElement('div');
-    title.className = 'schedule-title';
-
-    // Add favicon
-    const faviconUrl = getFaviconUrl(s.url);
-    if (faviconUrl) {
-      const favicon = document.createElement('img');
-      favicon.src = faviconUrl;
-      favicon.className = 'schedule-favicon';
-      favicon.alt = '';
-      favicon.onerror = () => {
-        favicon.style.display = 'none';
-      };
-      title.appendChild(favicon);
-    }
-
-    const urlText = document.createElement('span');
-    urlText.textContent = s.url.toLowerCase();
-    title.appendChild(urlText);
-    const meta = document.createElement('div');
-    meta.className = 'schedule-meta';
-    let whenText = '';
-    if (s.type === 'once')
-      whenText = `once @ ${new Date(s.when).toLocaleString()}`;
-    else if (s.type === 'daily') whenText = `daily @ ${s.time}`;
-    else if (s.type === 'weekly')
-      whenText = `weekly @ ${s.time} on ${(s.days || [])
-        .map((d) => ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][d])
-        .join(', ')}`;
-    else if (s.type === 'monthly')
-      whenText = `monthly @ ${s.time} on day ${s.day || '?'} of month`;
-    meta.textContent = whenText;
-    const small = document.createElement('div');
-    small.className = 'small';
-    small.textContent = s.message ? s.message.toLowerCase() : '';
-    // append title first
-    left.appendChild(title);
-    // show how this will open right under the url
-    const openLine = document.createElement('div');
-    openLine.className = 'small';
-    if (s.openIn === 'window') {
-      openLine.textContent = 'opens in window';
-    } else if (s.openIn === 'tab') {
-      if (s.openInBackground) {
-        openLine.textContent = 'opens in tab (background)';
-      } else {
-        openLine.textContent = 'opens in tab';
-      }
-    } else {
-      // fallback for unexpected values
-      openLine.textContent = `opens in ${String(s.openIn || 'tab')}`;
-    }
-    left.appendChild(openLine);
-    left.appendChild(meta);
-    left.appendChild(small);
-    // show run counts for all schedules (including 'once')
-    {
-      const progress = document.createElement('div');
-      progress.className = 'small';
-      const ran = Number(s.runCount) || 0;
-      const limit = s.stopAfter ? Number(s.stopAfter) : null;
-      if (limit) {
-        progress.textContent = `${ran}/${limit} runs`;
-      } else {
-        progress.textContent = ran === 1 ? '1 run' : `${ran} runs`;
-      }
-      left.appendChild(progress);
-    }
-    // last run display (always show 'never' when absent)
-    const last = document.createElement('div');
-    last.className = 'small';
-    if (s.lastRun) {
-      last.textContent = `last time opened ${new Date(
-        Number(s.lastRun)
-      ).toLocaleString()}`;
-    } else {
-      last.textContent = 'last time opened never';
-    }
-    left.appendChild(last);
-    // next occurrence display (never if expired)
-    const nextLine = document.createElement('div');
-    nextLine.className = 'small';
-    if (isExpired) {
-      nextLine.textContent = 'next time will open never';
-    } else {
-      const nextTs = computeNextForScheduleLocal(s);
-      if (nextTs) {
-        nextLine.textContent = `next time will open ${new Date(
-          nextTs
-        ).toLocaleString()}`;
-      } else {
-        nextLine.textContent = 'next time will open never';
-      }
-    }
-    left.appendChild(nextLine);
-    // gray out expired schedules (do not remove by default)
-    if (isExpired) li.classList.add('expired-schedule');
-
-    const right = document.createElement('div');
-    // Edit button - removes the schedule and populates the form for editing
-    const edit = document.createElement('button');
-    edit.type = 'button';
-    edit.className = 'edit-btn';
-    edit.textContent = isEditingThis ? 'editing…' : 'edit';
-    if (isEditingThis) edit.disabled = true;
-    edit.addEventListener('click', async (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      try {
-        populateFormFromSchedule(s);
-        enterEditMode(scheduleIdStr);
-        try {
-          refresh();
-        } catch (e) {}
-      } catch (e) {}
-    });
-    right.appendChild(edit);
-
-    const del = document.createElement('button');
-    del.type = 'button';
-    del.className = 'delete-btn';
-    del.textContent = 'delete';
-    if (isEditingThis) del.disabled = true;
-    del.addEventListener('click', async (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      try {
-        del.disabled = true;
-        li.classList.add('ow-fade');
-        const finish = async () => {
           try {
-            const schedules = await getSchedules();
-            const remaining = schedules.filter(
-              (x) => String(x.id) !== String(s.id)
+            console.debug(
+              '[OpenWhen][Options] single-schedule freshSchedule id',
+              freshSchedule && freshSchedule.id
             );
-            await setSchedules(remaining);
-            if (currentEditingId && String(s.id) === currentEditingId) {
-              exitEditMode({ resetForm: true });
-            }
-            chrome.runtime.sendMessage(
-              { type: 'rebuild', suppressLate: true },
-              () => {
-                try {
-                  chrome.runtime && chrome.runtime.lastError;
-                } catch (e) {}
-                try {
-                  refresh();
-                } catch (e) {}
-              }
-            );
-            // NOTE: do not show a 'Schedule removed' toast here. Removal confirmation should be shown
-            // only when the schedule is cancelled from the in-page banner (handled by the banner cancel toast).
           } catch (e) {}
-        };
-        li.addEventListener(
-          'transitionend',
-          () => {
-            finish();
-          },
-          { once: true }
-        );
-        // fallback in case transitionend doesn't fire
-        setTimeout(() => {
-          finish();
-        }, 420);
-      } catch (e) {}
-    });
-    right.appendChild(del);
+          if (freshSchedule) {
+            populateFormFromSchedule(freshSchedule);
+          } else {
+            // Fallback to closure data if not found (shouldn't happen)
+            populateFormFromSchedule(s);
+          }
 
-    li.appendChild(left);
-    li.appendChild(right);
-    ul.appendChild(li);
+          enterEditMode(scheduleIdStr);
+          try {
+            refresh();
+          } catch (e) {}
+        } catch (e) {
+          console.error('Failed to populate form or enter edit mode:', e);
+        }
+      });
+      right.appendChild(edit);
+
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'delete-btn';
+      del.textContent = 'delete';
+      if (isEditingThis) del.disabled = true;
+      del.addEventListener('click', async (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        try {
+          del.disabled = true;
+          li.classList.add('ow-fade');
+          const finish = async () => {
+            try {
+              const schedules = await getSchedules();
+              const remaining = schedules.filter(
+                (x) => String(x.id) !== String(s.id)
+              );
+              await setSchedules(remaining);
+              if (currentEditingId && String(s.id) === currentEditingId) {
+                exitEditMode({ resetForm: true });
+              }
+              chrome.runtime.sendMessage(
+                { type: 'rebuild', suppressLate: true },
+                () => {
+                  try {
+                    chrome.runtime && chrome.runtime.lastError;
+                  } catch (e) {}
+                  try {
+                    refresh();
+                  } catch (e) {}
+                }
+              );
+              // NOTE: do not show a 'Schedule removed' toast here. Removal confirmation should be shown
+              // only when the schedule is cancelled from the in-page banner (handled by the banner cancel toast).
+            } catch (e) {}
+          };
+          li.addEventListener(
+            'transitionend',
+            () => {
+              finish();
+            },
+            { once: true }
+          );
+          // fallback in case transitionend doesn't fire
+          setTimeout(() => {
+            finish();
+          }, 420);
+        } catch (e) {}
+      });
+      right.appendChild(del);
+
+      cardContainer.appendChild(left);
+      li.appendChild(cardContainer);
+      li.appendChild(right);
+      ul.appendChild(li);
+    }
   });
 }
 
@@ -937,8 +1191,10 @@ window.addEventListener('DOMContentLoaded', () => {
         if (windowUrlsManual) windowUrlsManual.hidden = true;
         if (windowTabsList) {
           windowTabsList.hidden = false;
-          // Load tabs
+          // Load tabs only if NOT in edit mode
+          const isEditMode = formEl && formEl.dataset.editingId;
           if (
+            !isEditMode &&
             window.popupWindowTabs &&
             typeof window.popupWindowTabs.loadCurrentWindowTabs === 'function'
           ) {
@@ -979,6 +1235,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // Window mode: Add URL button
   const addUrlBtn = $('#addUrlBtn');
   const windowUrlsList = $('#windowUrlsList');
+  const removeAllUrlsBtn = $('#removeAllUrlsBtn');
 
   if (addUrlBtn) {
     addUrlBtn.addEventListener('click', () => {
@@ -1057,12 +1314,117 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Wire up remove-all button for options page (clears current form URL fields)
+  if (removeAllUrlsBtn && windowUrlsList) {
+    removeAllUrlsBtn.addEventListener('click', () => {
+      // Clear all items
+      windowUrlsList.innerHTML = '';
+
+      // Add a single empty field back
+      const newItem = document.createElement('div');
+      newItem.className = 'window-url-item';
+      newItem.draggable = true;
+
+      const dragHandle = document.createElement('span');
+      dragHandle.className = 'drag-handle';
+      dragHandle.textContent = '⋮⋮';
+      dragHandle.title = 'Drag to reorder';
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'window-url-input';
+      input.placeholder = 'https://example.com or example.com';
+
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'remove-url-btn';
+      removeBtn.textContent = '×';
+      removeBtn.title = 'Remove URL';
+      removeBtn.disabled = true; // single field cannot be removed
+      removeBtn.addEventListener('click', () => {
+        newItem.remove();
+        const remaining = windowUrlsList.querySelectorAll('.window-url-item');
+        if (remaining.length === 1) {
+          const lastRemoveBtn = remaining[0].querySelector('.remove-url-btn');
+          if (lastRemoveBtn) lastRemoveBtn.disabled = true;
+        }
+      });
+
+      // Drag handlers
+      newItem.addEventListener('dragstart', (e) => {
+        newItem.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/html', newItem.innerHTML);
+      });
+      newItem.addEventListener('dragend', () =>
+        newItem.classList.remove('dragging')
+      );
+      newItem.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const draggingItem = windowUrlsList.querySelector('.dragging');
+        if (!draggingItem || draggingItem === newItem) return;
+        const items = Array.from(
+          windowUrlsList.querySelectorAll('.window-url-item')
+        );
+        const currentIndex = items.indexOf(newItem);
+        const draggingIndex = items.indexOf(draggingItem);
+        if (currentIndex > draggingIndex)
+          newItem.parentNode.insertBefore(draggingItem, newItem.nextSibling);
+        else newItem.parentNode.insertBefore(draggingItem, newItem);
+      });
+
+      newItem.appendChild(dragHandle);
+      newItem.appendChild(input);
+      newItem.appendChild(removeBtn);
+      windowUrlsList.appendChild(newItem);
+    });
+  }
+
   // Wire up initial remove buttons
   document.querySelectorAll('.remove-url-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       const item = btn.closest('.window-url-item');
       if (item && windowUrlsList && windowUrlsList.children.length > 1) {
         item.remove();
+      }
+    });
+  });
+
+  // Wire up drag-and-drop for initial window URL items
+  document.querySelectorAll('.window-url-item').forEach((item) => {
+    item.addEventListener('dragstart', (e) => {
+      item.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/html', item.innerHTML);
+    });
+
+    item.addEventListener('dragend', () => {
+      item.classList.remove('dragging');
+    });
+
+    item.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+
+      const draggingItem = windowUrlsList
+        ? windowUrlsList.querySelector('.dragging')
+        : null;
+      if (!draggingItem || draggingItem === item) return;
+
+      // Get all items and find positions
+      const items = Array.from(
+        windowUrlsList.querySelectorAll('.window-url-item')
+      );
+      const currentIndex = items.indexOf(item);
+      const draggingIndex = items.indexOf(draggingItem);
+
+      if (currentIndex > draggingIndex) {
+        // Insert after current item
+        item.parentNode.insertBefore(draggingItem, item.nextSibling);
+      } else {
+        // Insert before current item
+        item.parentNode.insertBefore(draggingItem, item);
       }
     });
   });
@@ -1569,4 +1931,10 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   } catch (e) {}
   // explicit runtime messages are handled by the top-level listener above
+
+  // Initialize timestamp to next minute on page load
+  const whenInput = $('#when');
+  if (whenInput && !whenInput.value) {
+    whenInput.value = getNextMinuteTimestamp();
+  }
 });

@@ -7,6 +7,16 @@ The format is based on "Keep a Changelog" and this project adheres to
 
 ## [Unreleased]
 
+## [1.2.0] - 2025-12-16
+
+### Added
+- **Window Mode**: New feature in the popup to view and schedule all tabs in the current window.
+- Added `popup_window_tabs.js` to handle window tab logic.
+
+### Changed
+- Updated popup and options UI to support window mode.
+- Refined banner styling and behavior.
+
 ## [1.1.0] - 2025-10-30
 
 ### Added
