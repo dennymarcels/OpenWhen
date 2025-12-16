@@ -69,6 +69,20 @@
   margin: 0;
 }
 
+.openwhen-badge {
+  background: #2d7cff;
+  color: #fff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: lowercase;
+  display: inline-block;
+  margin-bottom: 2px;
+  align-self: flex-start;
+  width: fit-content;
+}
+
 .openwhen-url {
   font-size: 13px;
   opacity: 0.95;
@@ -76,6 +90,43 @@
   overflow: hidden;
   text-overflow: ellipsis;
   margin: 0;
+}
+
+.openwhen-url-toggle {
+  font-size: 12px;
+  opacity: 0.85;
+  cursor: pointer;
+  text-decoration: underline;
+  margin: 0;
+  padding: 2px 0;
+  display: inline-block;
+}
+
+.openwhen-url-toggle:hover {
+  opacity: 1;
+}
+
+.openwhen-url-list {
+  font-size: 12px;
+  opacity: 0.9;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.openwhen-url-list.expanded {
+  max-height: 300px;
+  margin-top: 4px;
+}
+
+.openwhen-url-list li {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 2px 0;
 }
 
 .openwhen-when {
@@ -113,10 +164,25 @@
   cursor: pointer;
   font-weight: 600;
   flex: 0 0 auto;
+  transition: background-color 300ms ease, opacity 300ms ease;
 }
 
 .openwhen-cancel-btn:hover {
   filter: brightness(0.95)
+}
+
+/* Undo state - gray background */
+.openwhen-cancel-btn.undo {
+  background: #757575;
+  /* gray */
+  cursor: pointer;
+}
+
+/* Cancelled state - green background */
+.openwhen-cancel-btn.cancelled {
+  background: #4caf50;
+  /* green */
+  cursor: default;
 }
 
 /* set a CSS variable to allow pages that opt-in to reserve space */
