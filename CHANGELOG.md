@@ -7,7 +7,15 @@ The format is based on "Keep a Changelog" and this project adheres to
 
 ## [Unreleased]
 
+## [1.2.0] - 2025-12-16
+
+### Added
+- **Window Mode**: New feature in the popup to view and schedule all tabs in the current window.
+- Added `popup_window_tabs.js` to handle window tab logic.
+
 ### Changed
+- Updated popup and options UI to support window mode.
+- Refined banner styling and behavior.
 - Improved banner injection error handling to detect privileged pages (`chrome://`, `edge://`, etc.) and skip retry attempts.
 - Enhanced notification fallback behavior: notifications are now always shown regardless of banner injection success, providing reliable reminders even on pages where content scripts cannot be injected.
 

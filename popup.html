@@ -114,11 +114,45 @@
     <h1><img src="icons/icon48.png" alt="OpenWhen" class="icon--lg icon--rounded">OpenWhen</h1>
     <section>
       <h2>settings</h2>
+      <!-- Tab switcher for URL vs Window mode -->
+      <div class="schedule-mode-tabs">
+        <button type="button" class="tab-btn active" data-mode="url">url</button>
+        <button type="button" class="tab-btn" data-mode="window">window</button>
+      </div>
     </section>
     <form id="addForm">
-      <label class="label-inline">url
-        <input type="text" id="url" placeholder="https://example.com or example.com" required>
-      </label>
+      <!-- Single URL mode (default) -->
+      <div id="urlModeFields">
+        <label class="label-inline">url
+          <input type="text" id="url" placeholder="https://example.com or example.com" required>
+        </label>
+      </div>
+
+      <!-- Window mode: multiple URLs or current window tabs -->
+      <div id="windowModeFields" hidden>
+        <!-- Show this when in popup context: load current window tabs as editable fields -->
+        <div id="windowTabsList" hidden>
+          <label>urls from current window</label>
+          <div id="currentWindowTabs"></div>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" id="addUrlBtnPopup" class="secondary-btn">+ add url</button>
+            <button type="button" id="removeAllUrlsBtn" class="secondary-btn" style="background: #ff6b6b; color: white; border-color: #ff6b6b;">remove all</button>
+          </div>
+        </div>
+
+        <!-- Show this when NOT in popup context (options page/sidebar) -->
+        <div id="windowUrlsManual">
+          <label>urls for window</label>
+          <div id="windowUrlsList">
+            <div class="window-url-item" draggable="true">
+              <span class="drag-handle" title="Drag to reorder">⋮⋮</span>
+              <input type="text" class="window-url-input" placeholder="https://example.com or example.com">
+              <button type="button" class="remove-url-btn" title="Remove URL">×</button>
+            </div>
+          </div>
+          <button type="button" id="addUrlBtn" class="secondary-btn">+ add url</button>
+        </div>
+      </div>
 
       <label>open in
         <select id="openIn">
@@ -174,7 +208,8 @@
       </label>
 
       <div class="actions">
-        <button type="submit">add schedule</button>
+        <button type="submit" id="submitBtn">add schedule</button>
+        <button type="button" id="cancelEdit" class="secondary-btn" hidden>cancel</button>
       </div>
     </form>
 
@@ -200,6 +235,7 @@
       <ul id="schedulesList"></ul>
     </section>
   </main>
+  <script src="popup_window_tabs.js"></script>
   <script src="options.js"></script>
   <script src="popup_prefill.js"></script>
 </body>
