@@ -86,3 +86,13 @@ jobs:
           asset_path: ${{ steps.find_zip.outputs.zip }}
           asset_name: openwhen-${{ github.ref_name }}.zip
           asset_content_type: application/zip
+
+      - name: Publish to Chrome Web Store
+        uses: mobilefirstllc/cws-publish@latest
+        with:
+          action: 'publish'
+          client_id: ${{ secrets.CHROME_CLIENT_ID }}
+          client_secret: ${{ secrets.CHROME_CLIENT_SECRET }}
+          refresh_token: ${{ secrets.CHROME_REFRESH_TOKEN }}
+          extension_id: ${{ secrets.CHROME_EXTENSION_ID }}
+          zip_file: ${{ steps.find_zip.outputs.zip }}
