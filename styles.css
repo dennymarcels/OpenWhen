@@ -79,6 +79,42 @@ button {
   min-width: 0
 }
 
+/* daily multiple-times list */
+.daily-time-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.daily-time-item input[type="time"] {
+  flex: 0 0 auto;
+}
+
+.remove-time-btn {
+  background: #ff6b6b;
+  color: #fff;
+  border: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.remove-time-btn:hover {
+  background: #ff5252;
+}
+
+.add-time-btn {
+  margin-top: 4px;
+  font-size: 12px;
+  padding: 5px 10px;
+}
+
 .actions {
   margin-top: 12px
 }
@@ -439,6 +475,34 @@ h2 select {
   border-radius: 6px
 }
 
+/* Card undo-pending state: light gray card, muted text */
+.schedule-item.pending-delete {
+  background: #f0f0f0;
+  border-color: #d0d0d0;
+}
+
+.schedule-item.pending-delete .schedule-title,
+.schedule-item.pending-delete .schedule-meta,
+.schedule-item.pending-delete .small {
+  color: #888;
+}
+
+/* Undo button shown on schedule card during 3-second countdown */
+.ow-undo-btn {
+  background: #757575;
+  border: none;
+  color: #fff;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.ow-undo-btn:hover {
+  filter: brightness(1.15);
+}
+
 .expired-schedule .schedule-left {
   opacity: 0.5
 }
@@ -607,4 +671,29 @@ body.popup #searchBar {
   .schedule-item {
     padding: 8px
   }
+}
+/* Undo state styles */
+.schedule-item.undo-state {
+    background-color: #f0f0f0 !important;
+    color: #666 !important;
+}
+
+.schedule-item.undo-state .schedule-title,
+.schedule-item.undo-state .schedule-meta,
+.schedule-item.undo-state .small {
+    color: #666 !important;
+}
+
+.undo-btn {
+    background-color: #6c757d;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.undo-btn:hover {
+    background-color: #5a6268;
 }

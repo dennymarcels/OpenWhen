@@ -17,7 +17,7 @@
               el.remove();
             } catch (e) {}
           },
-          { once: true }
+          { once: true },
         );
       } catch (e) {}
       setTimeout(() => {
@@ -104,154 +104,225 @@
 
       // cancel button (attached to content top on the right)
       let cancelBtn = null;
+      let editBtn = null;
+      let actions = null;
       if (typeof scheduleId !== 'undefined' && scheduleId !== null) {
         try {
+          actions = document.createElement('div');
+          actions.className = 'openwhen-actions';
+
+          editBtn = document.createElement('button');
+          editBtn.className = 'openwhen-edit-btn';
+          editBtn.textContent = 'edit';
+          editBtn.title = 'Edit this schedule';
+          editBtn.addEventListener('click', () => {
+            try {
+              if (
+                typeof chrome !== 'undefined' &&
+                chrome.runtime &&
+                chrome.runtime.sendMessage
+              ) {
+                chrome.runtime.sendMessage({
+                  action: 'openOptionsPage',
+                  editScheduleId: scheduleId,
+                });
+              }
+            } catch (e) {}
+          });
+          actions.appendChild(editBtn);
+
           cancelBtn = document.createElement('button');
-          cancelBtn.className = 'openwhen-cancel-btn';
-          cancelBtn.textContent = 'cancel schedule';
+          cancelBtn.className = 'openwhen-delete-btn';
+          cancelBtn.textContent = 'delete';
 
           cancelBtn.addEventListener('click', () => {
             try {
-              cancelBtn.disabled = true;
-              let responded = false;
+              // Hide both action buttons; show undo badge with countdown
+              editBtn.style.display = 'none';
+              cancelBtn.style.display = 'none';
 
-              const handleResp = (ok) => {
-                if (responded) return;
-                responded = true;
-                if (ok) {
-                  const bannerId = 'openwhen-banner';
-                  const bannerEl = document.getElementById(bannerId);
-                  if (bannerEl) {
-                    const cancelBtnEl = bannerEl.querySelector(
-                      '.openwhen-cancel-btn'
-                    );
-                    if (cancelBtnEl) {
-                      const small = document.createElement('div');
-                      small.className = 'openwhen-cancel-toast';
-                      small.textContent = 'Schedule cancelled';
-                      // Insert toast before button, then remove button
-                      cancelBtnEl.parentNode.insertBefore(small, cancelBtnEl);
-                      cancelBtnEl.remove();
-                      setTimeout(() => {
-                        small.classList.add('openwhen-toast-fade');
-                        setTimeout(() => small.remove(), OPENWHEN_FADE_MS);
-                      }, 2200);
-                    }
+              let undoClicked = false;
+              let countdown = 3;
+              const undoBadge = document.createElement('button');
+              undoBadge.className = 'openwhen-undo-badge';
+              undoBadge.textContent = `undo (${countdown})`;
+              actions.appendChild(undoBadge);
+
+              const countdownInterval = setInterval(() => {
+                try {
+                  countdown--;
+                  if (countdown > 0) {
+                    undoBadge.textContent = `undo (${countdown})`;
+                  } else {
+                    clearInterval(countdownInterval);
                   }
-                } else {
-                  try {
-                    cancelBtn.disabled = false;
-                  } catch (e) {}
-                }
-              };
+                } catch (e) {}
+              }, 1000);
 
-              // Try the extension runtime first (preferred)
-              try {
-                if (
-                  typeof chrome !== 'undefined' &&
-                  chrome.runtime &&
-                  chrome.runtime.sendMessage
-                ) {
-                  // sendMessage with retries; if final attempt still yields lastError, allow the postMessage bridge fallback
-                  (function sendWithRetries(msg, attempts, delays, cb) {
-                    let attempt = 0;
-                    function tryOnce() {
+              undoBadge.addEventListener('click', () => {
+                undoClicked = true;
+                clearInterval(countdownInterval);
+                try {
+                  undoBadge.remove();
+                } catch (e) {}
+                editBtn.style.display = '';
+                cancelBtn.style.display = '';
+              });
+
+              // After 3 s, perform the actual deletion
+              setTimeout(() => {
+                if (undoClicked) return;
+                clearInterval(countdownInterval);
+                try {
+                  undoBadge.remove();
+                } catch (e) {}
+
+                // Show permanent "deleted" badge
+                const deletedBadge = document.createElement('div');
+                deletedBadge.className = 'openwhen-deleted-badge';
+                deletedBadge.textContent = 'deleted';
+                actions.appendChild(deletedBadge);
+
+                // Fade badge out after 2 s, then remove the actions area
+                setTimeout(() => {
+                  try {
+                    if (!deletedBadge.isConnected) return;
+                    deletedBadge.style.opacity = '0';
+                    setTimeout(() => {
                       try {
-                        chrome.runtime.sendMessage(msg, function (resp) {
-                          try {
-                            const le =
-                              chrome.runtime && chrome.runtime.lastError;
-                            if (!le) return cb(resp, null);
-                            attempt++;
-                            if (attempt < attempts) {
-                              const wait =
-                                delays[
-                                  Math.min(attempt - 1, delays.length - 1)
-                                ] || 100;
-                              setTimeout(tryOnce, wait);
-                            } else {
-                              return cb(resp, le);
+                        if (actions.isConnected) {
+                          actions.style.transition = 'opacity 350ms ease';
+                          actions.style.opacity = '0';
+                          setTimeout(() => {
+                            try {
+                              actions.remove();
+                            } catch (e) {}
+                          }, 360);
+                        }
+                      } catch (e) {}
+                    }, 400);
+                  } catch (e) {}
+                }, 2000);
+
+                // Send deletion to background; on failure restore buttons
+                let responded = false;
+                const handleResp = (ok) => {
+                  if (responded) return;
+                  responded = true;
+                  if (!ok) {
+                    try {
+                      deletedBadge.remove();
+                    } catch (e) {}
+                    editBtn.style.display = '';
+                    cancelBtn.style.display = '';
+                  }
+                };
+
+                try {
+                  if (
+                    typeof chrome !== 'undefined' &&
+                    chrome.runtime &&
+                    chrome.runtime.sendMessage
+                  ) {
+                    (function sendWithRetries(msg, attempts, delays, cb) {
+                      let attempt = 0;
+                      function tryOnce() {
+                        try {
+                          chrome.runtime.sendMessage(msg, function (resp) {
+                            try {
+                              const le =
+                                chrome.runtime && chrome.runtime.lastError;
+                              if (!le) return cb(resp, null);
+                              attempt++;
+                              if (attempt < attempts) {
+                                setTimeout(
+                                  tryOnce,
+                                  delays[
+                                    Math.min(attempt - 1, delays.length - 1)
+                                  ] || 100,
+                                );
+                              } else {
+                                return cb(resp, le);
+                              }
+                            } catch (e) {
+                              attempt++;
+                              if (attempt < attempts) {
+                                setTimeout(
+                                  tryOnce,
+                                  delays[
+                                    Math.min(attempt - 1, delays.length - 1)
+                                  ] || 100,
+                                );
+                              } else {
+                                cb(null, e);
+                              }
                             }
-                          } catch (e) {
-                            attempt++;
-                            if (attempt < attempts) {
-                              setTimeout(
-                                tryOnce,
-                                delays[
-                                  Math.min(attempt - 1, delays.length - 1)
-                                ] || 100
-                              );
-                            } else {
-                              cb(null, e);
-                            }
+                          });
+                        } catch (err) {
+                          attempt++;
+                          if (attempt < attempts) {
+                            setTimeout(
+                              tryOnce,
+                              delays[
+                                Math.min(attempt - 1, delays.length - 1)
+                              ] || 100,
+                            );
+                          } else {
+                            cb(null, err);
                           }
-                        });
-                      } catch (err) {
-                        attempt++;
-                        if (attempt < attempts) {
-                          setTimeout(
-                            tryOnce,
-                            delays[Math.min(attempt - 1, delays.length - 1)] ||
-                              100
-                          );
-                        } else {
-                          cb(null, err);
                         }
                       }
-                    }
-                    tryOnce();
-                  })(
-                    { type: 'openwhen_cancel_schedule', id: scheduleId },
-                    3,
-                    [100, 300],
-                    (resp, lastError) => {
-                      try {
-                        if (lastError) {
-                          // allow fallback postMessage bridge (do not mark responded)
-                          return;
-                        }
-                        handleResp(Boolean(resp && resp.ok));
-                      } catch (e) {}
-                    }
-                  );
-                }
-              } catch (e) {}
-
-              // Fallback: if no response within timeout, postMessage to injected bridge
-              setTimeout(() => {
-                if (responded) return;
-                // listen for bridge response
-                const onBridge = (ev) => {
-                  try {
-                    const d = ev && ev.data;
-                    if (!d || typeof d !== 'object') return;
-                    if (
-                      d.type === 'openwhen_cancel_response' &&
-                      String(d.id) === String(scheduleId)
-                    ) {
-                      window.removeEventListener('message', onBridge);
-                      handleResp(Boolean(d.ok));
-                    }
-                  } catch (e) {}
-                };
-                window.addEventListener('message', onBridge);
-                try {
-                  window.postMessage(
-                    { type: 'openwhen_cancel_schedule', id: scheduleId },
-                    '*'
-                  );
-                } catch (e) {}
-                setTimeout(() => {
-                  if (!responded) {
-                    try {
-                      cancelBtn.disabled = false;
-                    } catch (e) {}
-                    window.removeEventListener('message', onBridge);
+                      tryOnce();
+                    })(
+                      { type: 'openwhen_cancel_schedule', id: scheduleId },
+                      3,
+                      [100, 300],
+                      (resp, lastError) => {
+                        try {
+                          if (lastError) return; // allow postMessage bridge fallback
+                          handleResp(Boolean(resp && resp.ok));
+                        } catch (e) {}
+                      },
+                    );
                   }
-                }, 3000);
-              }, 900);
+                } catch (e) {}
+
+                // Fallback: postMessage bridge
+                setTimeout(() => {
+                  if (responded) return;
+                  const onBridge = (ev) => {
+                    try {
+                      const d = ev && ev.data;
+                      if (!d || typeof d !== 'object') return;
+                      if (
+                        d.type === 'openwhen_cancel_response' &&
+                        String(d.id) === String(scheduleId)
+                      ) {
+                        window.removeEventListener('message', onBridge);
+                        handleResp(Boolean(d.ok));
+                      }
+                    } catch (e) {}
+                  };
+                  window.addEventListener('message', onBridge);
+                  try {
+                    window.postMessage(
+                      { type: 'openwhen_cancel_schedule', id: scheduleId },
+                      '*',
+                    );
+                  } catch (e) {}
+                  setTimeout(() => {
+                    if (!responded) {
+                      window.removeEventListener('message', onBridge);
+                      handleResp(false);
+                    }
+                  }, 3000);
+                }, 900);
+              }, 3000);
             } catch (e) {}
           });
+
+          actions.appendChild(cancelBtn);
+          contentTop.appendChild(actions);
         } catch (e) {}
       }
 
@@ -263,20 +334,28 @@
           removeWithFade(banner);
           document.documentElement.style.setProperty(
             '--openwhen-banner-height',
-            '0px'
+            '0px',
           );
         } catch (e) {}
       });
 
       banner.appendChild(iconWrap);
       banner.appendChild(content);
-      if (cancelBtn) contentTop.appendChild(cancelBtn);
+
+      if (actions) {
+        if (cancelBtn) actions.appendChild(cancelBtn);
+        contentTop.appendChild(actions);
+      } else if (cancelBtn) {
+        // Fallback for unexpected case where actions is null but cancelBtn exists
+        contentTop.appendChild(cancelBtn);
+      }
+
       banner.appendChild(close);
       document.documentElement.appendChild(banner);
       try {
         document.documentElement.style.setProperty(
           '--openwhen-banner-height',
-          banner.offsetHeight + 'px'
+          banner.offsetHeight + 'px',
         );
       } catch (e) {}
     } catch (e) {}
@@ -288,7 +367,7 @@
         msg.message || '',
         msg.source || 'scheduled',
         msg.missedAt || null,
-        msg.scheduleId || null
+        msg.scheduleId || null,
       );
   });
 

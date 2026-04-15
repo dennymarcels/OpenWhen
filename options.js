@@ -12,15 +12,15 @@ function getNextMinuteTimestamp() {
   nextMinute.setMilliseconds(0);
   const pad = (n) => String(n).padStart(2, '0');
   return `${nextMinute.getFullYear()}-${pad(nextMinute.getMonth() + 1)}-${pad(
-    nextMinute.getDate()
+    nextMinute.getDate(),
   )}T${pad(nextMinute.getHours())}:${pad(nextMinute.getMinutes())}`;
 }
 
 async function getSchedules() {
   return new Promise((resolve) =>
     chrome.storage.local.get([SCHEDULES_KEY], (res) =>
-      resolve(res[SCHEDULES_KEY] || [])
-    )
+      resolve(res[SCHEDULES_KEY] || []),
+    ),
   );
 }
 async function setSchedules(schedules) {
@@ -37,6 +37,7 @@ let submitBtnEl = null;
 let cancelBtnEl = null;
 let updateModeFn = null;
 let updateScheduleModeFn = null;
+let populateDailyTimesFn = null;
 
 function setFormMode(mode) {
   const isEdit = mode === 'edit';
@@ -110,10 +111,18 @@ function computeNextForScheduleLocal(s) {
     }
     const [hour, minute] = (s.time || '00:00').split(':').map(Number);
     if (s.type === 'daily') {
-      const next = new Date(now);
-      next.setHours(hour, minute, 0, 0);
-      if (next.getTime() <= now.getTime()) next.setDate(next.getDate() + 1);
-      return next.getTime();
+      const allTimes =
+        Array.isArray(s.times) && s.times.length > 0
+          ? s.times
+          : [s.time || '00:00'];
+      const candidates = allTimes.map((t) => {
+        const [h, m] = t.split(':').map(Number);
+        const next = new Date(now);
+        next.setHours(h, m, 0, 0);
+        if (next.getTime() <= now.getTime()) next.setDate(next.getDate() + 1);
+        return next.getTime();
+      });
+      return Math.min(...candidates);
     }
     if (s.type === 'weekly') {
       if (!Array.isArray(s.days) || s.days.length === 0) return null;
@@ -194,7 +203,7 @@ function populateFormFromSchedule(s) {
           if (!isNaN(d.getTime())) {
             const pad = (n) => String(n).padStart(2, '0');
             when.value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
-              d.getDate()
+              d.getDate(),
             )}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
           } else when.value = String(s.when || '');
         } catch (e) {
@@ -204,6 +213,13 @@ function populateFormFromSchedule(s) {
     }
     const time = $('#time');
     if (time) time.value = s.time || '00:00';
+    if (typeof populateDailyTimesFn === 'function' && s.type === 'daily') {
+      populateDailyTimesFn(
+        Array.isArray(s.times) && s.times.length > 0
+          ? s.times
+          : [s.time || '00:00'],
+      );
+    }
     const monthDay = $('#monthDay');
     if (monthDay) monthDay.value = s.day || '';
     const stopAfter = $('#stopAfter');
@@ -211,9 +227,9 @@ function populateFormFromSchedule(s) {
     const message = $('#message');
     if (message) message.value = s.message || '';
     const weeklyDays = $('#weeklyDays');
-    if (weeklyDays && Array.isArray(s.days)) {
+    if (weeklyDays && s.type === 'weekly' && Array.isArray(s.days)) {
       Array.from(weeklyDays.querySelectorAll('input[type=checkbox]')).forEach(
-        (cb) => (cb.checked = s.days.map(String).includes(String(cb.value)))
+        (cb) => (cb.checked = s.days.map(String).includes(String(cb.value))),
       );
     }
     // Ensure the mode UI updates even when mode.value is set programmatically
@@ -235,7 +251,7 @@ function populateFormFromWindowSchedule(groupSchedules) {
           ids: Array.isArray(groupSchedules)
             ? groupSchedules.map((g) => g.id)
             : null,
-        }
+        },
       );
     } catch (e) {}
     // Switch to window mode
@@ -271,7 +287,7 @@ function populateFormFromWindowSchedule(groupSchedules) {
           if (!isNaN(d.getTime())) {
             const pad = (n) => String(n).padStart(2, '0');
             when.value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
-              d.getDate()
+              d.getDate(),
             )}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
           } else when.value = String(representative.when || '');
         } catch (e) {
@@ -281,6 +297,16 @@ function populateFormFromWindowSchedule(groupSchedules) {
     }
     const time = $('#time');
     if (time) time.value = representative.time || '00:00';
+    if (
+      typeof populateDailyTimesFn === 'function' &&
+      representative.type === 'daily'
+    ) {
+      populateDailyTimesFn(
+        Array.isArray(representative.times) && representative.times.length > 0
+          ? representative.times
+          : [representative.time || '00:00'],
+      );
+    }
     const monthDay = $('#monthDay');
     if (monthDay) monthDay.value = representative.day || '';
     const stopAfter = $('#stopAfter');
@@ -291,12 +317,16 @@ function populateFormFromWindowSchedule(groupSchedules) {
     const message = $('#message');
     if (message) message.value = representative.message || '';
     const weeklyDays = $('#weeklyDays');
-    if (weeklyDays && Array.isArray(representative.days)) {
+    if (
+      weeklyDays &&
+      representative.type === 'weekly' &&
+      Array.isArray(representative.days)
+    ) {
       Array.from(weeklyDays.querySelectorAll('input[type=checkbox]')).forEach(
         (cb) =>
           (cb.checked = representative.days
             .map(String)
-            .includes(String(cb.value)))
+            .includes(String(cb.value))),
       );
     }
     const openInBackground = $('#openInBackground');
@@ -375,7 +405,7 @@ function populateFormFromWindowSchedule(groupSchedules) {
 
           // Get all items and find positions
           const items = Array.from(
-            container.querySelectorAll('.window-url-item')
+            container.querySelectorAll('.window-url-item'),
           );
           const currentIndex = items.indexOf(item);
           const draggingIndex = items.indexOf(draggingItem);
@@ -451,7 +481,7 @@ function renderSchedules(list) {
 
       // Sort by windowIndex
       groupSchedules.sort(
-        (a, b) => (a.windowIndex || 0) - (b.windowIndex || 0)
+        (a, b) => (a.windowIndex || 0) - (b.windowIndex || 0),
       );
 
       // Use first schedule for metadata
@@ -495,7 +525,7 @@ function renderSchedules(list) {
               { type: 'openwhen_open_now', id: scheduleIdStr },
               (response) => {
                 resolve(response);
-              }
+              },
             );
           });
           openNow.textContent = 'opened!';
@@ -583,9 +613,16 @@ function renderSchedules(list) {
       let whenText = '';
       if (representative.type === 'once')
         whenText = `once @ ${new Date(representative.when).toLocaleString()}`;
-      else if (representative.type === 'daily')
-        whenText = `daily @ ${representative.time}`;
-      else if (representative.type === 'weekly')
+      else if (representative.type === 'daily') {
+        if (
+          Array.isArray(representative.times) &&
+          representative.times.length > 1
+        ) {
+          whenText = `daily @ ${representative.times.join(', ')}`;
+        } else {
+          whenText = `daily @ ${representative.time || '00:00'}`;
+        }
+      } else if (representative.type === 'weekly')
         whenText = `weekly @ ${representative.time} on ${(
           representative.days || []
         )
@@ -627,7 +664,7 @@ function renderSchedules(list) {
       last.className = 'small';
       if (representative.lastRun) {
         last.textContent = `last time opened ${new Date(
-          Number(representative.lastRun)
+          Number(representative.lastRun),
         ).toLocaleString()}`;
       } else {
         last.textContent = 'last time opened never';
@@ -643,7 +680,7 @@ function renderSchedules(list) {
         const nextTs = computeNextForScheduleLocal(representative);
         if (nextTs) {
           nextLine.textContent = `next time will open ${new Date(
-            nextTs
+            nextTs,
           ).toLocaleString()}`;
         } else {
           nextLine.textContent = 'next time will open never';
@@ -680,7 +717,7 @@ function renderSchedules(list) {
 
           // First, find the representative schedule by ID to get current windowGroup
           const freshRepresentative = allSchedules.find(
-            (sch) => String(sch.id) === scheduleIdStr
+            (sch) => String(sch.id) === scheduleIdStr,
           );
 
           console.log('Edit clicked - scheduleId:', scheduleIdStr);
@@ -693,10 +730,10 @@ function renderSchedules(list) {
 
           // Now filter all schedules with the same windowGroup
           const freshGroup = allSchedules.filter(
-            (sch) => sch.windowGroup === freshRepresentative.windowGroup
+            (sch) => sch.windowGroup === freshRepresentative.windowGroup,
           );
           freshGroup.sort(
-            (a, b) => (a.windowIndex || 0) - (b.windowIndex || 0)
+            (a, b) => (a.windowIndex || 0) - (b.windowIndex || 0),
           );
 
           console.log(
@@ -705,7 +742,7 @@ function renderSchedules(list) {
               id: s.id,
               url: s.url,
               windowIndex: s.windowIndex,
-            }))
+            })),
           );
 
           // IMPORTANT: Enter edit mode FIRST to set dataset.editingId
@@ -735,13 +772,11 @@ function renderSchedules(list) {
         ev.preventDefault();
         ev.stopPropagation();
         try {
-          del.disabled = true;
-          li.classList.add('ow-fade');
           const finish = async () => {
             try {
               const schedules = await getSchedules();
               const remaining = schedules.filter(
-                (x) => x.windowGroup !== groupId
+                (x) => x.windowGroup !== groupId,
               );
               await setSchedules(remaining);
               if (
@@ -759,20 +794,76 @@ function renderSchedules(list) {
                   try {
                     refresh();
                   } catch (e) {}
-                }
+                },
               );
             } catch (e) {}
           };
-          li.addEventListener(
-            'transitionend',
-            () => {
-              finish();
-            },
-            { once: true }
-          );
-          setTimeout(() => {
-            finish();
-          }, 420);
+
+          // Enter pending-delete state
+          li.classList.add('pending-delete');
+          openNow.style.display = 'none';
+          right.style.display = 'none';
+
+          let countdown = 3;
+          const undoBtn = document.createElement('button');
+          undoBtn.className = 'ow-undo-btn';
+          undoBtn.textContent = `undo (${countdown})`;
+          undoBtn.style.position = 'absolute';
+          undoBtn.style.top = '50%';
+          undoBtn.style.right = '10px';
+          undoBtn.style.transform = 'translateY(-50%)';
+          li.appendChild(undoBtn);
+
+          const countdownInterval = setInterval(() => {
+            try {
+              countdown--;
+              if (countdown > 0) {
+                undoBtn.textContent = `undo (${countdown})`;
+              } else {
+                clearInterval(countdownInterval);
+              }
+            } catch (e) {}
+          }, 1000);
+
+          let undone = false;
+          let deleteTimeout;
+          undoBtn.addEventListener('click', (ev2) => {
+            ev2.preventDefault();
+            ev2.stopPropagation();
+            undone = true;
+            clearInterval(countdownInterval);
+            clearTimeout(deleteTimeout);
+            undoBtn.remove();
+            li.classList.remove('pending-delete');
+            openNow.style.display = '';
+            right.style.display = '';
+          });
+
+          deleteTimeout = setTimeout(() => {
+            if (undone) return;
+            clearInterval(countdownInterval);
+            undoBtn.remove();
+            const h = li.offsetHeight;
+            li.style.height = h + 'px';
+            li.style.overflow = 'hidden';
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                li.style.transition = 'opacity 200ms ease';
+                li.style.opacity = '0';
+                setTimeout(() => {
+                  li.style.transition =
+                    'height 300ms ease, margin-bottom 300ms ease, padding 300ms ease';
+                  li.style.height = '0px';
+                  li.style.marginBottom = '0px';
+                  li.style.paddingTop = '0px';
+                  li.style.paddingBottom = '0px';
+                  setTimeout(() => {
+                    finish();
+                  }, 320);
+                }, 220);
+              });
+            });
+          }, 3000);
         } catch (e) {}
       });
       right.appendChild(del);
@@ -819,7 +910,7 @@ function renderSchedules(list) {
               { type: 'openwhen_open_now', id: scheduleIdStr },
               (response) => {
                 resolve(response);
-              }
+              },
             );
           });
           openNow.textContent = 'opened!';
@@ -876,8 +967,13 @@ function renderSchedules(list) {
       let whenText = '';
       if (s.type === 'once')
         whenText = `once @ ${new Date(s.when).toLocaleString()}`;
-      else if (s.type === 'daily') whenText = `daily @ ${s.time}`;
-      else if (s.type === 'weekly')
+      else if (s.type === 'daily') {
+        if (Array.isArray(s.times) && s.times.length > 1) {
+          whenText = `daily @ ${s.times.join(', ')}`;
+        } else {
+          whenText = `daily @ ${s.time || '00:00'}`;
+        }
+      } else if (s.type === 'weekly')
         whenText = `weekly @ ${s.time} on ${(s.days || [])
           .map((d) => ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][d])
           .join(', ')}`;
@@ -925,7 +1021,7 @@ function renderSchedules(list) {
       last.className = 'small';
       if (s.lastRun) {
         last.textContent = `last time opened ${new Date(
-          Number(s.lastRun)
+          Number(s.lastRun),
         ).toLocaleString()}`;
       } else {
         last.textContent = 'last time opened never';
@@ -940,7 +1036,7 @@ function renderSchedules(list) {
         const nextTs = computeNextForScheduleLocal(s);
         if (nextTs) {
           nextLine.textContent = `next time will open ${new Date(
-            nextTs
+            nextTs,
           ).toLocaleString()}`;
         } else {
           nextLine.textContent = 'next time will open never';
@@ -973,19 +1069,19 @@ function renderSchedules(list) {
           try {
             console.debug(
               '[OpenWhen][Options] single-schedule edit clicked',
-              scheduleIdStr
+              scheduleIdStr,
             );
           } catch (e) {}
           // Fetch fresh schedule data from storage
           const allSchedules = await getSchedules();
           const freshSchedule = allSchedules.find(
-            (sch) => String(sch.id) === scheduleIdStr
+            (sch) => String(sch.id) === scheduleIdStr,
           );
 
           try {
             console.debug(
               '[OpenWhen][Options] single-schedule freshSchedule id',
-              freshSchedule && freshSchedule.id
+              freshSchedule && freshSchedule.id,
             );
           } catch (e) {}
           if (freshSchedule) {
@@ -1014,13 +1110,11 @@ function renderSchedules(list) {
         ev.preventDefault();
         ev.stopPropagation();
         try {
-          del.disabled = true;
-          li.classList.add('ow-fade');
           const finish = async () => {
             try {
               const schedules = await getSchedules();
               const remaining = schedules.filter(
-                (x) => String(x.id) !== String(s.id)
+                (x) => String(x.id) !== String(s.id),
               );
               await setSchedules(remaining);
               if (currentEditingId && String(s.id) === currentEditingId) {
@@ -1035,23 +1129,76 @@ function renderSchedules(list) {
                   try {
                     refresh();
                   } catch (e) {}
-                }
+                },
               );
-              // NOTE: do not show a 'Schedule removed' toast here. Removal confirmation should be shown
-              // only when the schedule is cancelled from the in-page banner (handled by the banner cancel toast).
             } catch (e) {}
           };
-          li.addEventListener(
-            'transitionend',
-            () => {
-              finish();
-            },
-            { once: true }
-          );
-          // fallback in case transitionend doesn't fire
-          setTimeout(() => {
-            finish();
-          }, 420);
+
+          // Enter pending-delete state
+          li.classList.add('pending-delete');
+          openNow.style.display = 'none';
+          right.style.display = 'none';
+
+          let countdown = 3;
+          const undoBtn = document.createElement('button');
+          undoBtn.className = 'ow-undo-btn';
+          undoBtn.textContent = `undo (${countdown})`;
+          undoBtn.style.position = 'absolute';
+          undoBtn.style.top = '50%';
+          undoBtn.style.right = '10px';
+          undoBtn.style.transform = 'translateY(-50%)';
+          li.appendChild(undoBtn);
+
+          const countdownInterval = setInterval(() => {
+            try {
+              countdown--;
+              if (countdown > 0) {
+                undoBtn.textContent = `undo (${countdown})`;
+              } else {
+                clearInterval(countdownInterval);
+              }
+            } catch (e) {}
+          }, 1000);
+
+          let undone = false;
+          let deleteTimeout;
+          undoBtn.addEventListener('click', (ev2) => {
+            ev2.preventDefault();
+            ev2.stopPropagation();
+            undone = true;
+            clearInterval(countdownInterval);
+            clearTimeout(deleteTimeout);
+            undoBtn.remove();
+            li.classList.remove('pending-delete');
+            openNow.style.display = '';
+            right.style.display = '';
+          });
+
+          deleteTimeout = setTimeout(() => {
+            if (undone) return;
+            clearInterval(countdownInterval);
+            undoBtn.remove();
+            const h = li.offsetHeight;
+            li.style.height = h + 'px';
+            li.style.overflow = 'hidden';
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                li.style.transition = 'opacity 200ms ease';
+                li.style.opacity = '0';
+                setTimeout(() => {
+                  li.style.transition =
+                    'height 300ms ease, margin-bottom 300ms ease, padding 300ms ease';
+                  li.style.height = '0px';
+                  li.style.marginBottom = '0px';
+                  li.style.paddingTop = '0px';
+                  li.style.paddingBottom = '0px';
+                  setTimeout(() => {
+                    finish();
+                  }, 320);
+                }, 220);
+              });
+            });
+          }, 3000);
         } catch (e) {}
       });
       right.appendChild(del);
@@ -1290,7 +1437,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
         // Get all items and find positions
         const items = Array.from(
-          windowUrlsList.querySelectorAll('.window-url-item')
+          windowUrlsList.querySelectorAll('.window-url-item'),
         );
         const currentIndex = items.indexOf(newItem);
         const draggingIndex = items.indexOf(draggingItem);
@@ -1357,7 +1504,7 @@ window.addEventListener('DOMContentLoaded', () => {
         e.dataTransfer.setData('text/html', newItem.innerHTML);
       });
       newItem.addEventListener('dragend', () =>
-        newItem.classList.remove('dragging')
+        newItem.classList.remove('dragging'),
       );
       newItem.addEventListener('dragover', (e) => {
         e.preventDefault();
@@ -1365,7 +1512,7 @@ window.addEventListener('DOMContentLoaded', () => {
         const draggingItem = windowUrlsList.querySelector('.dragging');
         if (!draggingItem || draggingItem === newItem) return;
         const items = Array.from(
-          windowUrlsList.querySelectorAll('.window-url-item')
+          windowUrlsList.querySelectorAll('.window-url-item'),
         );
         const currentIndex = items.indexOf(newItem);
         const draggingIndex = items.indexOf(draggingItem);
@@ -1414,7 +1561,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
       // Get all items and find positions
       const items = Array.from(
-        windowUrlsList.querySelectorAll('.window-url-item')
+        windowUrlsList.querySelectorAll('.window-url-item'),
       );
       const currentIndex = items.indexOf(item);
       const draggingIndex = items.indexOf(draggingItem);
@@ -1505,7 +1652,7 @@ window.addEventListener('DOMContentLoaded', () => {
         const pad = (n) => String(n).padStart(2, '0');
         const now = new Date();
         const minStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(
-          now.getDate()
+          now.getDate(),
         )}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
         whenInput.min = minStr;
       }
@@ -1515,6 +1662,10 @@ window.addEventListener('DOMContentLoaded', () => {
       if (recurringFields) recurringFields.hidden = true;
       if (weeklyDays) weeklyDays.hidden = true;
       if (monthlyFields) monthlyFields.hidden = true;
+      const dailyTimesFields = $('#dailyTimesFields');
+      if (dailyTimesFields) dailyTimesFields.hidden = true;
+      const singleTimeLabel = $('#singleTimeLabel');
+      if (singleTimeLabel) singleTimeLabel.hidden = true;
       const stopLabel = $('#stopAfterLabel');
       if (stopLabel) stopLabel.hidden = true;
     } else if (val === 'daily') {
@@ -1522,6 +1673,10 @@ window.addEventListener('DOMContentLoaded', () => {
       if (recurringFields) recurringFields.hidden = false;
       if (weeklyDays) weeklyDays.hidden = true;
       if (monthlyFields) monthlyFields.hidden = true;
+      const dailyTimesFields = $('#dailyTimesFields');
+      if (dailyTimesFields) dailyTimesFields.hidden = false;
+      const singleTimeLabel = $('#singleTimeLabel');
+      if (singleTimeLabel) singleTimeLabel.hidden = true;
       const stopLabel = $('#stopAfterLabel');
       if (stopLabel) stopLabel.hidden = false;
     } else if (val === 'weekly') {
@@ -1529,6 +1684,10 @@ window.addEventListener('DOMContentLoaded', () => {
       if (recurringFields) recurringFields.hidden = false;
       if (weeklyDays) weeklyDays.hidden = false;
       if (monthlyFields) monthlyFields.hidden = true;
+      const dailyTimesFields = $('#dailyTimesFields');
+      if (dailyTimesFields) dailyTimesFields.hidden = true;
+      const singleTimeLabel = $('#singleTimeLabel');
+      if (singleTimeLabel) singleTimeLabel.hidden = false;
       const stopLabel = $('#stopAfterLabel');
       if (stopLabel) stopLabel.hidden = false;
     } else if (val === 'monthly') {
@@ -1536,6 +1695,10 @@ window.addEventListener('DOMContentLoaded', () => {
       if (recurringFields) recurringFields.hidden = false;
       if (weeklyDays) weeklyDays.hidden = true;
       if (monthlyFields) monthlyFields.hidden = false;
+      const dailyTimesFields = $('#dailyTimesFields');
+      if (dailyTimesFields) dailyTimesFields.hidden = true;
+      const singleTimeLabel = $('#singleTimeLabel');
+      if (singleTimeLabel) singleTimeLabel.hidden = false;
       const stopLabel = $('#stopAfterLabel');
       if (stopLabel) stopLabel.hidden = false;
     }
@@ -1544,6 +1707,70 @@ window.addEventListener('DOMContentLoaded', () => {
     mode.addEventListener('change', updateMode);
   }
   updateMode();
+
+  // --- Daily multi-time list helpers ---
+  const dailyTimesList = $('#dailyTimesList');
+  const addDailyTimeBtn = $('#addDailyTimeBtn');
+
+  function createTimeRow(value) {
+    const row = document.createElement('div');
+    row.className = 'daily-time-item';
+    const input = document.createElement('input');
+    input.type = 'time';
+    input.value = value || '00:00';
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'remove-time-btn';
+    removeBtn.textContent = '×';
+    removeBtn.title = 'Remove this time';
+    removeBtn.addEventListener('click', () => {
+      row.remove();
+      _refreshRemoveBtns();
+    });
+    row.appendChild(input);
+    row.appendChild(removeBtn);
+    return row;
+  }
+
+  function _refreshRemoveBtns() {
+    if (!dailyTimesList) return;
+    const rows = dailyTimesList.querySelectorAll('.daily-time-item');
+    rows.forEach((r) => {
+      const btn = r.querySelector('.remove-time-btn');
+      if (btn) btn.disabled = rows.length === 1;
+    });
+  }
+
+  function populateDailyTimes(timesArr) {
+    if (!dailyTimesList) return;
+    dailyTimesList.innerHTML = '';
+    const list =
+      Array.isArray(timesArr) && timesArr.length > 0 ? timesArr : ['00:00'];
+    list.forEach((t) => dailyTimesList.appendChild(createTimeRow(t)));
+    _refreshRemoveBtns();
+  }
+
+  function getDailyTimes() {
+    if (!dailyTimesList) return ['00:00'];
+    return Array.from(dailyTimesList.querySelectorAll('input[type=time]')).map(
+      (i) => i.value || '00:00',
+    );
+  }
+
+  if (addDailyTimeBtn) {
+    addDailyTimeBtn.addEventListener('click', () => {
+      if (dailyTimesList) {
+        dailyTimesList.appendChild(createTimeRow('00:00'));
+        _refreshRemoveBtns();
+      }
+    });
+  }
+
+  // Expose to module-level populate helpers
+  populateDailyTimesFn = populateDailyTimes;
+
+  // Initialise with one empty row
+  populateDailyTimes(null);
 
   // check for a prefill URL set by the context menu
   try {
@@ -1638,9 +1865,10 @@ window.addEventListener('DOMContentLoaded', () => {
     const days =
       weeklyDays && weeklyDays.querySelectorAll
         ? Array.from(
-            weeklyDays.querySelectorAll('input[type=checkbox]:checked')
+            weeklyDays.querySelectorAll('input[type=checkbox]:checked'),
           ).map((i) => Number(i.value))
         : [];
+    const dailyTimes = getDailyTimes();
     const monthDayInput = $('#monthDay');
     const monthDay = monthDayInput ? Number(monthDayInput.value) : null;
     const stopAfterInput = $('#stopAfter');
@@ -1686,21 +1914,21 @@ window.addEventListener('DOMContentLoaded', () => {
       if (isWindowMode) {
         // Remove all schedules in the same window group as the one being edited
         const baseSchedule = nextSchedules.find(
-          (x) => String(x.id) === editingId
+          (x) => String(x.id) === editingId,
         );
         const oldGroupId = baseSchedule && baseSchedule.windowGroup;
 
         if (oldGroupId) {
           // Remove all schedules with this window group
           const filtered = nextSchedules.filter(
-            (x) => x.windowGroup !== oldGroupId
+            (x) => x.windowGroup !== oldGroupId,
           );
           nextSchedules.length = 0;
           nextSchedules.push(...filtered);
         } else {
           // Remove just the single schedule
           const idx = nextSchedules.findIndex(
-            (x) => String(x.id) === editingId
+            (x) => String(x.id) === editingId,
           );
           if (idx >= 0) nextSchedules.splice(idx, 1);
         }
@@ -1726,8 +1954,11 @@ window.addEventListener('DOMContentLoaded', () => {
           };
 
           if (type === 'once') newSchedule.when = when;
-          else if (type === 'daily') newSchedule.time = time;
-          else if (type === 'weekly') {
+          else if (type === 'daily') {
+            newSchedule.time = dailyTimes[0];
+            if (dailyTimes.length > 1)
+              newSchedule.times = dailyTimes.slice().sort();
+          } else if (type === 'weekly') {
             newSchedule.time = time;
             newSchedule.days = days;
           } else if (type === 'monthly') {
@@ -1763,6 +1994,7 @@ window.addEventListener('DOMContentLoaded', () => {
         });
         delete updated.when;
         delete updated.time;
+        delete updated.times;
         delete updated.days;
         delete updated.day;
         delete updated.stopAfter;
@@ -1773,7 +2005,8 @@ window.addEventListener('DOMContentLoaded', () => {
         if (type === 'once') {
           updated.when = when;
         } else if (type === 'daily') {
-          updated.time = time;
+          updated.time = dailyTimes[0];
+          if (dailyTimes.length > 1) updated.times = dailyTimes.slice().sort();
         } else if (type === 'weekly') {
           updated.time = time;
           updated.days = days;
@@ -1787,7 +2020,7 @@ window.addEventListener('DOMContentLoaded', () => {
           updated.stopAfter = stopAfter;
         }
 
-        if (!Number.isFinite(updated.runCount)) updated.runCount = 0;
+        updated.runCount = 0;
         if (idx >= 0) {
           nextSchedules[idx] = updated;
         } else {
@@ -1816,8 +2049,11 @@ window.addEventListener('DOMContentLoaded', () => {
           };
 
           if (type === 'once') newSchedule.when = when;
-          else if (type === 'daily') newSchedule.time = time;
-          else if (type === 'weekly') {
+          else if (type === 'daily') {
+            newSchedule.time = dailyTimes[0];
+            if (dailyTimes.length > 1)
+              newSchedule.times = dailyTimes.slice().sort();
+          } else if (type === 'weekly') {
             newSchedule.time = time;
             newSchedule.days = days;
           } else if (type === 'monthly') {
@@ -1848,8 +2084,11 @@ window.addEventListener('DOMContentLoaded', () => {
           runCount: 0,
         };
         if (type === 'once') newSchedule.when = when;
-        else if (type === 'daily') newSchedule.time = time;
-        else if (type === 'weekly') {
+        else if (type === 'daily') {
+          newSchedule.time = dailyTimes[0];
+          if (dailyTimes.length > 1)
+            newSchedule.times = dailyTimes.slice().sort();
+        } else if (type === 'weekly') {
           newSchedule.time = time;
           newSchedule.days = days;
         } else if (type === 'monthly') {
@@ -1882,7 +2121,7 @@ window.addEventListener('DOMContentLoaded', () => {
         try {
           refresh();
         } catch (e) {}
-      }
+      },
     );
   });
 
@@ -1938,3 +2177,40 @@ window.addEventListener('DOMContentLoaded', () => {
     whenInput.value = getNextMinuteTimestamp();
   }
 });
+
+// Handle edit mode from URL params
+(async function () {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const editId = params.get('edit');
+    if (editId) {
+      setTimeout(async () => {
+        try {
+          const schedules = await getSchedules();
+          const s = schedules.find((x) => String(x.id) === String(editId));
+          if (s) {
+            if (s.windowGroup) {
+              const group = schedules.filter(
+                (x) => x.windowGroup === s.windowGroup,
+              );
+              group.sort((a, b) => (a.windowIndex || 0) - (b.windowIndex || 0));
+              if (typeof enterEditMode === 'function') enterEditMode(editId);
+              if (typeof populateFormFromWindowSchedule === 'function') {
+                populateFormFromWindowSchedule(group);
+              }
+            } else {
+              if (typeof populateFormFromSchedule === 'function') {
+                populateFormFromSchedule(s);
+              }
+              if (typeof enterEditMode === 'function') enterEditMode(editId);
+            }
+            // Refresh UI to show edit state in list if needed
+            if (typeof refresh === 'function') refresh();
+          }
+        } catch (e) {
+          console.error('Failed to load schedule for edit:', e);
+        }
+      }, 500);
+    }
+  } catch (e) {}
+})();

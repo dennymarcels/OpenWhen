@@ -15,8 +15,8 @@ try {
 async function getSchedules() {
   return new Promise((resolve) =>
     chrome.storage.local.get([SCHEDULES_KEY], (res) =>
-      resolve(res[SCHEDULES_KEY] || [])
-    )
+      resolve(res[SCHEDULES_KEY] || []),
+    ),
   );
 }
 
@@ -59,7 +59,7 @@ function _processWriteQueue() {
             updated.runCount = Number(updated.runCount) || 0;
             if (updated.lastRun === undefined) delete updated.lastRun;
             const merged = stored.map((x) =>
-              String(x.id) === String(job.id) ? updated : x
+              String(x.id) === String(job.id) ? updated : x,
             );
             const obj = {};
             obj[SCHEDULES_KEY] = merged;
@@ -111,10 +111,18 @@ function computeNextForSchedule(s) {
   }
   const [hour, minute] = (s.time || '00:00').split(':').map(Number);
   if (s.type === 'daily') {
-    const next = new Date(now);
-    next.setHours(hour, minute, 0, 0);
-    if (next.getTime() <= now.getTime()) next.setDate(next.getDate() + 1);
-    return next.getTime();
+    const allTimes =
+      Array.isArray(s.times) && s.times.length > 0
+        ? s.times
+        : [s.time || '00:00'];
+    const candidates = allTimes.map((t) => {
+      const [h, m] = t.split(':').map(Number);
+      const next = new Date(now);
+      next.setHours(h, m, 0, 0);
+      if (next.getTime() <= now.getTime()) next.setDate(next.getDate() + 1);
+      return next.getTime();
+    });
+    return Math.min(...candidates);
   }
   if (s.type === 'weekly') {
     if (!Array.isArray(s.days) || s.days.length === 0) return null;
@@ -186,13 +194,21 @@ function occurrencesBetween(s, startTs, endTs, cap = 365) {
     return out;
   }
   if (s.type === 'daily') {
-    const [hour, minute] = (s.time || '00:00').split(':').map(Number);
+    const allTimes =
+      Array.isArray(s.times) && s.times.length > 0
+        ? s.times
+        : [s.time || '00:00'];
     let cand = new Date(start);
-    cand.setHours(hour, minute, 0, 0);
-    if (cand.getTime() <= startTs) cand.setDate(cand.getDate() + 1);
+    cand.setHours(0, 0, 0, 0);
     let i = 0;
     while (cand.getTime() <= end.getTime() && i < cap) {
-      out.push(cand.getTime());
+      for (const t of allTimes) {
+        const [h, m] = t.split(':').map(Number);
+        const occ = new Date(cand);
+        occ.setHours(h, m, 0, 0);
+        if (occ.getTime() > startTs && occ.getTime() <= endTs)
+          out.push(occ.getTime());
+      }
       cand.setDate(cand.getDate() + 1);
       i++;
     }
@@ -264,8 +280,8 @@ async function fetchAndResizeIcon(url, size = 32) {
 async function getLastCheck() {
   return new Promise((resolve) =>
     chrome.storage.local.get([LAST_CHECK_KEY], (res) =>
-      resolve(res[LAST_CHECK_KEY] || null)
-    )
+      resolve(res[LAST_CHECK_KEY] || null),
+    ),
   );
 }
 async function setLastCheck(ts) {
@@ -396,8 +412,11 @@ function _formatScheduleDetails(schedule) {
     if (!schedule || !schedule.type) return '';
     if (schedule.type === 'once') return '[once]';
     if (schedule.type === 'daily') {
-      const time = schedule.time || '00:00';
-      return `[daily @ ${time}]`;
+      const allTimes =
+        Array.isArray(schedule.times) && schedule.times.length > 0
+          ? schedule.times
+          : [schedule.time || '00:00'];
+      return `[daily @ ${allTimes.join(', ')}]`;
     }
     if (schedule.type === 'weekly') {
       const time = schedule.time || '00:00';
@@ -611,7 +630,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     // If this is part of a window group, update all schedules in the group
     if (s.windowGroup) {
       const groupSchedules = schedules.filter(
-        (x) => x.windowGroup === s.windowGroup
+        (x) => x.windowGroup === s.windowGroup,
       );
       for (const gs of groupSchedules) {
         try {
@@ -640,14 +659,14 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
         // Sort by windowIndex and collect all URLs
         groupSchedules.sort(
-          (a, b) => (a.windowIndex || 0) - (b.windowIndex || 0)
+          (a, b) => (a.windowIndex || 0) - (b.windowIndex || 0),
         );
         const allUrls = groupSchedules.map((gs) => gs.url);
 
         // Open all in one window
         const createdWindow = await new Promise((resolve) => {
           chrome.windows.create({ url: allUrls, focused: true }, (w) =>
-            resolve(w)
+            resolve(w),
           );
         });
 
@@ -669,7 +688,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
               const display = _buildDisplayContent(
                 firstSched,
                 whenDate,
-                openOpts
+                openOpts,
               );
               const manifest = chrome.runtime.getManifest();
               const extName =
@@ -717,7 +736,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
                         extN,
                         urls,
                         hasMsg,
-                        isWinSched
+                        isWinSched,
                       ) {
                         try {
                           const id = `openwhen-toast-${String(scheduleId)}`;
@@ -787,7 +806,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
                               toggle.addEventListener('click', () => {
                                 urlList.classList.toggle('expanded');
                                 toggle.textContent = urlList.classList.contains(
-                                  'expanded'
+                                  'expanded',
                                 )
                                   ? `hide urls (${urls.length})`
                                   : `see urls (${urls.length})`;
@@ -817,62 +836,73 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
                           contentTop.appendChild(messageStack);
 
-                          // Cancel button for window schedules
+                          // Delete button for window schedules
                           if (scheduleId) {
-                            const cancelBtn = document.createElement('button');
-                            cancelBtn.className = 'openwhen-cancel-btn';
-                            cancelBtn.textContent = 'cancel schedule';
-                            let undoTimeout = null;
-                            let countdownInterval = null;
+                            const schedActs = document.createElement('div');
+                            schedActs.className = 'openwhen-actions';
 
-                            cancelBtn.addEventListener('click', () => {
-                              console.log(
-                                '[OpenWhen] Cancel button clicked, has undo class:',
-                                cancelBtn.classList.contains('undo')
-                              );
-                              if (cancelBtn.classList.contains('undo')) {
-                                // Cancel the deletion
-                                console.log(
-                                  '[OpenWhen] Undo clicked - cancelling deletion'
-                                );
-                                clearTimeout(undoTimeout);
-                                if (countdownInterval) {
-                                  clearInterval(countdownInterval);
-                                  countdownInterval = null;
-                                }
-                                cancelBtn.textContent = 'cancel schedule';
-                                cancelBtn.classList.remove('undo');
-                                cancelBtn.disabled = false;
-                                return;
-                              }
+                            const deleteBtn = document.createElement('button');
+                            deleteBtn.className = 'openwhen-delete-btn';
+                            deleteBtn.textContent = 'delete';
 
-                              // Start undo countdown
-                              console.log('[OpenWhen] Starting undo countdown');
-                              cancelBtn.classList.add('undo');
+                            deleteBtn.addEventListener('click', () => {
+                              deleteBtn.style.display = 'none';
+                              let undoClicked = false;
                               let countdown = 3;
-                              cancelBtn.textContent = `undo (${countdown})`;
-                              cancelBtn.disabled = false; // Keep enabled for undo
+                              const undoBadge =
+                                document.createElement('button');
+                              undoBadge.className = 'openwhen-undo-badge';
+                              undoBadge.textContent = `undo (${countdown})`;
+                              schedActs.appendChild(undoBadge);
 
-                              countdownInterval = setInterval(() => {
+                              const cntdwnInterval = setInterval(() => {
                                 countdown--;
                                 if (countdown > 0) {
-                                  cancelBtn.textContent = `undo (${countdown})`;
+                                  undoBadge.textContent = `undo (${countdown})`;
                                 } else {
-                                  clearInterval(countdownInterval);
-                                  countdownInterval = null;
+                                  clearInterval(cntdwnInterval);
                                 }
                               }, 1000);
 
-                              undoTimeout = setTimeout(() => {
-                                // After 3 seconds, actually delete
-                                if (countdownInterval) {
-                                  clearInterval(countdownInterval);
-                                  countdownInterval = null;
-                                }
-                                cancelBtn.classList.remove('undo');
-                                cancelBtn.classList.add('cancelled');
-                                cancelBtn.disabled = true;
-                                cancelBtn.textContent = 'schedule cancelled';
+                              undoBadge.addEventListener('click', () => {
+                                undoClicked = true;
+                                clearInterval(cntdwnInterval);
+                                undoBadge.remove();
+                                deleteBtn.style.display = '';
+                              });
+
+                              setTimeout(() => {
+                                if (undoClicked) return;
+                                clearInterval(cntdwnInterval);
+                                undoBadge.remove();
+                                const deletedBadge =
+                                  document.createElement('div');
+                                deletedBadge.className =
+                                  'openwhen-deleted-badge';
+                                deletedBadge.textContent = 'deleted';
+                                schedActs.appendChild(deletedBadge);
+
+                                // Fade badge after 2 s, then remove actions area
+                                setTimeout(() => {
+                                  try {
+                                    if (!deletedBadge.isConnected) return;
+                                    deletedBadge.style.opacity = '0';
+                                    setTimeout(() => {
+                                      try {
+                                        if (schedActs.isConnected) {
+                                          schedActs.style.transition =
+                                            'opacity 350ms ease';
+                                          schedActs.style.opacity = '0';
+                                          setTimeout(() => {
+                                            try {
+                                              schedActs.remove();
+                                            } catch (e) {}
+                                          }, 360);
+                                        }
+                                      } catch (e) {}
+                                    }, 400);
+                                  } catch (e) {}
+                                }, 2000);
 
                                 if (
                                   typeof chrome !== 'undefined' &&
@@ -885,18 +915,14 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
                                       type: 'openwhen_cancel_schedule',
                                       id: scheduleId,
                                     },
-                                    () => {
-                                      // Fade out after showing confirmation
-                                      setTimeout(() => {
-                                        toast.classList.add('openwhen-fade');
-                                        setTimeout(() => toast.remove(), 350);
-                                      }, 1000);
-                                    }
+                                    () => {},
                                   );
                                 }
                               }, 3000);
                             });
-                            contentTop.appendChild(cancelBtn);
+
+                            schedActs.appendChild(deleteBtn);
+                            contentTop.appendChild(schedActs);
                           }
 
                           content.appendChild(contentTop);
@@ -907,7 +933,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
                           close.className = 'openwhen-close-btn';
                           close.setAttribute(
                             'aria-label',
-                            'Dismiss OpenWhen reminder'
+                            'Dismiss OpenWhen reminder',
                           );
                           close.addEventListener('click', () => {
                             toast.classList.add('openwhen-fade');
@@ -963,7 +989,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       // Clear alarms for all schedules in group (for once schedules)
       if (s.type === 'once') {
         const groupSchedules = schedules.filter(
-          (x) => x.windowGroup === s.windowGroup
+          (x) => x.windowGroup === s.windowGroup,
         );
         for (const gs of groupSchedules) {
           try {
@@ -974,10 +1000,10 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         // For recurring window schedules, only recreate alarm for first schedule in group
         // (to prevent multiple alarms for the same window group)
         const groupSchedules = schedules.filter(
-          (x) => x.windowGroup === s.windowGroup
+          (x) => x.windowGroup === s.windowGroup,
         );
         groupSchedules.sort(
-          (a, b) => (a.windowIndex || 0) - (b.windowIndex || 0)
+          (a, b) => (a.windowIndex || 0) - (b.windowIndex || 0),
         );
         const isFirstInGroup =
           groupSchedules[0] && groupSchedules[0].id === s.id;
@@ -1045,7 +1071,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       // Find the schedule being cancelled
       const cancelledSchedule = schedules.find(
-        (s) => String(s.id) === String(id)
+        (s) => String(s.id) === String(id),
       );
 
       // If it's a window schedule, remove all schedules with the same windowGroup
@@ -1072,7 +1098,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       try {
         const keys =
           (await new Promise((res) =>
-            chrome.storage.local.get(null, (r) => res(Object.keys(r || {})))
+            chrome.storage.local.get(null, (r) => res(Object.keys(r || {}))),
           )) || [];
         const toRemove = keys.filter((k) => k && k.indexOf('_notif_') === 0);
         if (toRemove.length) chrome.storage.local.remove(toRemove);
@@ -1112,12 +1138,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // If it's a window schedule, open all tabs in the group
       if (schedule.windowGroup) {
         const groupSchedules = schedules.filter(
-          (s) => s.windowGroup === schedule.windowGroup
+          (s) => s.windowGroup === schedule.windowGroup,
         );
 
         // Sort by windowIndex and collect all URLs
         groupSchedules.sort(
-          (a, b) => (a.windowIndex || 0) - (b.windowIndex || 0)
+          (a, b) => (a.windowIndex || 0) - (b.windowIndex || 0),
         );
         const allUrls = groupSchedules.map((gs) => gs.url);
 
@@ -1258,7 +1284,7 @@ function _updateNotificationSafe(notifId, options) {
 
 function _makeNotificationId(schedule) {
   return `openwhen_notif_${String(schedule.id)}_${Date.now()}_${Math.floor(
-    Math.random() * 10000
+    Math.random() * 10000,
   )}`;
 }
 
@@ -1324,7 +1350,7 @@ async function openScheduleNow(s, opts) {
       extName,
       urlArg,
       hasMessageArg,
-      isWindowScheduleArg
+      isWindowScheduleArg,
     ) => {
       if (!tabId) return;
       try {
@@ -1337,7 +1363,7 @@ async function openScheduleNow(s, opts) {
           extNameArg,
           urlArgInner,
           hasMessageInner,
-          isWindowSched
+          isWindowSched,
         ) => {
           try {
             const id = `openwhen-toast-${String(scheduleIdArg)}`;
@@ -1424,77 +1450,119 @@ async function openScheduleNow(s, opts) {
             contentTop.appendChild(messageStack);
             content.appendChild(contentTop);
 
-            // Cancel (attached to content top on the right)
+            // Actions (Edit + Cancel) attached to content top on the right
             let cancelBtn = null;
+            let editBtn = null;
+            let actions = null;
             try {
               if (
                 typeof scheduleIdArg !== 'undefined' &&
                 scheduleIdArg !== null
               ) {
+                actions = document.createElement('div');
+                actions.className = 'openwhen-actions';
+
+                // Edit button
+                try {
+                  editBtn = document.createElement('button');
+                  editBtn.className = 'openwhen-edit-btn';
+                  editBtn.textContent = 'edit';
+                  editBtn.title = 'Edit this schedule';
+                  editBtn.addEventListener('click', () => {
+                    try {
+                      if (
+                        chrome &&
+                        chrome.runtime &&
+                        chrome.runtime.sendMessage
+                      ) {
+                        chrome.runtime.sendMessage({
+                          action: 'openOptionsPage',
+                          editScheduleId: scheduleIdArg,
+                        });
+                      }
+                    } catch (e) {}
+                  });
+                  actions.appendChild(editBtn);
+                } catch (e) {}
+
                 cancelBtn = document.createElement('button');
-                cancelBtn.className = 'openwhen-cancel-btn';
-                cancelBtn.textContent = 'cancel schedule';
-                let undoTimeout = null;
-                let countdownInterval = null;
+                cancelBtn.className = 'openwhen-delete-btn';
+                cancelBtn.textContent = 'delete';
 
                 cancelBtn.addEventListener('click', () => {
                   try {
-                    console.log(
-                      '[OpenWhen] Cancel button clicked, has undo class:',
-                      cancelBtn.classList.contains('undo')
-                    );
-                    if (cancelBtn.classList.contains('undo')) {
-                      // Cancel the deletion
-                      console.log(
-                        '[OpenWhen] Undo clicked - cancelling deletion'
-                      );
-                      clearTimeout(undoTimeout);
-                      if (countdownInterval) {
-                        clearInterval(countdownInterval);
-                        countdownInterval = null;
-                      }
-                      cancelBtn.textContent = 'cancel schedule';
-                      cancelBtn.classList.remove('undo');
-                      cancelBtn.disabled = false;
-                      return;
-                    }
+                    // Hide both action buttons; show undo badge with countdown
+                    if (editBtn) editBtn.style.display = 'none';
+                    cancelBtn.style.display = 'none';
 
-                    // Start undo countdown
-                    console.log('[OpenWhen] Starting undo countdown');
-                    cancelBtn.classList.add('undo');
+                    let undoClicked = false;
                     let countdown = 3;
-                    cancelBtn.textContent = `undo (${countdown})`;
-                    cancelBtn.disabled = false; // Keep enabled for undo
+                    const undoBadge = document.createElement('button');
+                    undoBadge.className = 'openwhen-undo-badge';
+                    undoBadge.textContent = `undo (${countdown})`;
+                    actions.appendChild(undoBadge);
 
-                    countdownInterval = setInterval(() => {
-                      countdown--;
-                      if (countdown > 0) {
-                        cancelBtn.textContent = `undo (${countdown})`;
-                      } else {
-                        clearInterval(countdownInterval);
-                        countdownInterval = null;
-                      }
+                    const countdownInterval = setInterval(() => {
+                      try {
+                        countdown--;
+                        if (countdown > 0) {
+                          undoBadge.textContent = `undo (${countdown})`;
+                        } else {
+                          clearInterval(countdownInterval);
+                        }
+                      } catch (e) {}
                     }, 1000);
 
-                    undoTimeout = setTimeout(() => {
-                      // After 3 seconds, actually delete
-                      if (countdownInterval) {
-                        clearInterval(countdownInterval);
-                        countdownInterval = null;
-                      }
-                      cancelBtn.classList.remove('undo');
-                      cancelBtn.classList.add('cancelled');
-                      cancelBtn.disabled = true;
-                      cancelBtn.textContent = 'schedule cancelled';
+                    undoBadge.addEventListener('click', () => {
+                      undoClicked = true;
+                      clearInterval(countdownInterval);
+                      try {
+                        undoBadge.remove();
+                      } catch (e) {}
+                      if (editBtn) editBtn.style.display = '';
+                      cancelBtn.style.display = '';
+                    });
 
-                      // Prefer direct runtime call when available (works when this code executes via executeScript in extension context)
+                    // After 3 seconds, perform deletion
+                    setTimeout(() => {
+                      if (undoClicked) return;
+                      clearInterval(countdownInterval);
+                      try {
+                        undoBadge.remove();
+                      } catch (e) {}
+
+                      const deletedBadge = document.createElement('div');
+                      deletedBadge.className = 'openwhen-deleted-badge';
+                      deletedBadge.textContent = 'deleted';
+                      actions.appendChild(deletedBadge);
+
+                      // Fade badge after 2 s, then remove actions area
+                      setTimeout(() => {
+                        try {
+                          if (!deletedBadge.isConnected) return;
+                          deletedBadge.style.opacity = '0';
+                          setTimeout(() => {
+                            try {
+                              if (actions.isConnected) {
+                                actions.style.transition = 'opacity 350ms ease';
+                                actions.style.opacity = '0';
+                                setTimeout(() => {
+                                  try {
+                                    actions.remove();
+                                  } catch (e) {}
+                                }, 360);
+                              }
+                            } catch (e) {}
+                          }, 400);
+                        } catch (e) {}
+                      }, 2000);
+
                       if (
                         typeof chrome !== 'undefined' &&
                         chrome.runtime &&
                         typeof chrome.runtime.sendMessage === 'function'
                       ) {
                         try {
-                          // Retry helper: attempts sendMessage up to 3 times with small backoffs
                           (function sendWithRetries(msg, attempts, delays, cb) {
                             let attempt = 0;
                             function tryOnce() {
@@ -1506,19 +1574,18 @@ async function openScheduleNow(s, opts) {
                                       const le =
                                         chrome.runtime &&
                                         chrome.runtime.lastError;
-                                      if (!le) {
-                                        return cb(resp, null);
-                                      }
+                                      if (!le) return cb(resp, null);
                                       attempt++;
                                       if (attempt < attempts) {
-                                        const wait =
+                                        setTimeout(
+                                          tryOnce,
                                           delays[
                                             Math.min(
                                               attempt - 1,
-                                              delays.length - 1
+                                              delays.length - 1,
                                             )
-                                          ] || 100;
-                                        setTimeout(tryOnce, wait);
+                                          ] || 100,
+                                        );
                                       } else {
                                         return cb(resp, le);
                                       }
@@ -1530,15 +1597,15 @@ async function openScheduleNow(s, opts) {
                                           delays[
                                             Math.min(
                                               attempt - 1,
-                                              delays.length - 1
+                                              delays.length - 1,
                                             )
-                                          ] || 100
+                                          ] || 100,
                                         );
                                       } else {
                                         cb(null, e);
                                       }
                                     }
-                                  }
+                                  },
                                 );
                               } catch (err) {
                                 attempt++;
@@ -1547,7 +1614,7 @@ async function openScheduleNow(s, opts) {
                                     tryOnce,
                                     delays[
                                       Math.min(attempt - 1, delays.length - 1)
-                                    ] || 100
+                                    ] || 100,
                                   );
                                 } else {
                                   cb(null, err);
@@ -1564,68 +1631,23 @@ async function openScheduleNow(s, opts) {
                             [100, 300],
                             (resp, lastError) => {
                               try {
-                                // if lastError is present after retries, re-enable button
-                                if (lastError) {
+                                if (lastError || !(resp && resp.ok)) {
                                   try {
-                                    cancelBtn.disabled = false;
+                                    deletedBadge.remove();
                                   } catch (e) {}
-                                  try {
-                                    // preserve existing debug-flag path (no logging)
-                                    chrome.storage &&
-                                      chrome.storage.local &&
-                                      chrome.storage.local.get &&
-                                      chrome.storage.local.get(
-                                        ['openwhen_debug'],
-                                        function (r) {
-                                          try {
-                                            if (r && r.openwhen_debug) {
-                                              /* debug mode: developer may inspect storage */
-                                            }
-                                          } catch (e) {}
-                                        }
-                                      );
-                                  } catch (e) {}
-                                } else if (resp && resp.ok) {
-                                  // Replace the cancel button with the confirmation toast
-                                  try {
-                                    const small = document.createElement('div');
-                                    small.className = 'openwhen-cancel-toast';
-                                    small.textContent = 'schedule cancelled';
-                                    // Insert toast before button, then remove button
-                                    cancelBtn.parentNode.insertBefore(
-                                      small,
-                                      cancelBtn
-                                    );
-                                    cancelBtn.remove();
-                                    setTimeout(() => {
-                                      try {
-                                        small.classList.add(
-                                          'openwhen-toast-fade'
-                                        );
-                                        setTimeout(() => {
-                                          try {
-                                            small.remove();
-                                          } catch (e) {}
-                                        }, 350);
-                                      } catch (e) {}
-                                    }, 2000);
-                                  } catch (e) {}
-                                } else {
-                                  try {
-                                    cancelBtn.disabled = false;
-                                  } catch (e) {}
+                                  if (editBtn) editBtn.style.display = '';
+                                  cancelBtn.style.display = '';
                                 }
                               } catch (e) {}
-                            }
+                            },
                           );
                         } catch (e) {
-                          // fallback to postMessage bridge
                           window.postMessage(
                             {
                               type: 'openwhen_cancel_schedule',
                               id: scheduleIdArg,
                             },
-                            '*'
+                            '*',
                           );
                           const onResp = (ev) => {
                             try {
@@ -1637,48 +1659,24 @@ async function openScheduleNow(s, opts) {
                               )
                                 return;
                               window.removeEventListener('message', onResp);
-                              if (d.ok) {
-                                // Replace the cancel button with the confirmation toast
+                              if (!d.ok) {
                                 try {
-                                  const small = document.createElement('div');
-                                  small.className = 'openwhen-cancel-toast';
-                                  small.textContent = 'schedule cancelled';
-                                  // Insert toast before button, then remove button
-                                  cancelBtn.parentNode.insertBefore(
-                                    small,
-                                    cancelBtn
-                                  );
-                                  cancelBtn.remove();
-                                  setTimeout(() => {
-                                    try {
-                                      small.classList.add(
-                                        'openwhen-toast-fade'
-                                      );
-                                      setTimeout(() => {
-                                        try {
-                                          small.remove();
-                                        } catch (e) {}
-                                      }, 350);
-                                    } catch (e) {}
-                                  }, 2000);
+                                  deletedBadge.remove();
                                 } catch (e) {}
-                              } else {
-                                try {
-                                  cancelBtn.disabled = false;
-                                } catch (e) {}
+                                if (editBtn) editBtn.style.display = '';
+                                cancelBtn.style.display = '';
                               }
                             } catch (e) {}
                           };
                           window.addEventListener('message', onResp);
                         }
                       } else {
-                        // no chrome.runtime available - use postMessage bridge
                         window.postMessage(
                           {
                             type: 'openwhen_cancel_schedule',
                             id: scheduleIdArg,
                           },
-                          '*'
+                          '*',
                         );
                         const onResp = (ev) => {
                           try {
@@ -1690,39 +1688,18 @@ async function openScheduleNow(s, opts) {
                             )
                               return;
                             window.removeEventListener('message', onResp);
-                            if (d.ok) {
-                              // Replace the cancel button with the confirmation toast
+                            if (!d.ok) {
                               try {
-                                const small = document.createElement('div');
-                                small.className = 'openwhen-cancel-toast';
-                                small.textContent = 'schedule cancelled';
-                                // Insert toast before button, then remove button
-                                cancelBtn.parentNode.insertBefore(
-                                  small,
-                                  cancelBtn
-                                );
-                                cancelBtn.remove();
-                                setTimeout(() => {
-                                  try {
-                                    small.classList.add('openwhen-toast-fade');
-                                    setTimeout(() => {
-                                      try {
-                                        small.remove();
-                                      } catch (e) {}
-                                    }, 350);
-                                  } catch (e) {}
-                                }, 2000);
+                                deletedBadge.remove();
                               } catch (e) {}
-                            } else {
-                              try {
-                                cancelBtn.disabled = false;
-                              } catch (e) {}
+                              if (editBtn) editBtn.style.display = '';
+                              cancelBtn.style.display = '';
                             }
                           } catch (e) {}
                         };
                         window.addEventListener('message', onResp);
                       }
-                    }, 3000); // End of setTimeout for undo countdown
+                    }, 3000);
                   } catch (e) {}
                 });
               }
@@ -1748,7 +1725,7 @@ async function openScheduleNow(s, opts) {
                         toast.remove();
                       } catch (e) {}
                     },
-                    { once: true }
+                    { once: true },
                   );
                 } catch (e) {}
                 setTimeout(() => {
@@ -1765,7 +1742,14 @@ async function openScheduleNow(s, opts) {
 
             toast.appendChild(iconWrap);
             toast.appendChild(content);
-            if (cancelBtn) contentTop.appendChild(cancelBtn);
+
+            if (actions) {
+              if (cancelBtn) actions.appendChild(cancelBtn);
+              contentTop.appendChild(actions);
+            } else if (cancelBtn) {
+              contentTop.appendChild(cancelBtn);
+            }
+
             toast.appendChild(close);
             document.documentElement.appendChild(toast);
           } catch (e) {}
@@ -1798,7 +1782,7 @@ async function openScheduleNow(s, opts) {
                                 msg,
                                 attempts,
                                 delays,
-                                cb
+                                cb,
                               ) {
                                 let attempt = 0;
                                 function tryOnce() {
@@ -1819,7 +1803,7 @@ async function openScheduleNow(s, opts) {
                                               delays[
                                                 Math.min(
                                                   attempt - 1,
-                                                  delays.length - 1
+                                                  delays.length - 1,
                                                 )
                                               ] || 100;
                                             setTimeout(tryOnce, wait);
@@ -1834,15 +1818,15 @@ async function openScheduleNow(s, opts) {
                                               delays[
                                                 Math.min(
                                                   attempt - 1,
-                                                  delays.length - 1
+                                                  delays.length - 1,
                                                 )
-                                              ] || 100
+                                              ] || 100,
                                             );
                                           } else {
                                             cb(null, e);
                                           }
                                         }
-                                      }
+                                      },
                                     );
                                   } catch (err) {
                                     attempt++;
@@ -1852,9 +1836,9 @@ async function openScheduleNow(s, opts) {
                                         delays[
                                           Math.min(
                                             attempt - 1,
-                                            delays.length - 1
+                                            delays.length - 1,
                                           )
-                                        ] || 100
+                                        ] || 100,
                                       );
                                     } else {
                                       cb(null, err);
@@ -1879,7 +1863,7 @@ async function openScheduleNow(s, opts) {
                                           lastError:
                                             lastError && String(lastError),
                                         },
-                                        '*'
+                                        '*',
                                       );
                                     } catch (e) {}
                                     try {
@@ -1896,12 +1880,12 @@ async function openScheduleNow(s, opts) {
                                                   /* debug mode: developer may inspect storage */
                                                 }
                                               } catch (e) {}
-                                            }
+                                            },
                                           );
                                       }
                                     } catch (e) {}
                                   } catch (e) {}
-                                }
+                                },
                               );
                             } catch (e) {}
                           }
@@ -1994,7 +1978,7 @@ async function openScheduleNow(s, opts) {
                       extNameArg,
                       urlArgInner,
                       hasMessageInner,
-                      isWindowSched
+                      isWindowSched,
                     ) {
                       try {
                         const id = 'openwhen-toast-' + String(scheduleIdArg);
@@ -2111,75 +2095,150 @@ async function openScheduleNow(s, opts) {
                         }
 
                         const _OPENWHEN_FADE_MS = 350;
-                        const maybeCancel = document.createElement('div');
-                        maybeCancel.style.flex = '0 0 auto';
+                        const actions = document.createElement('div');
+                        actions.style.flex = '0 0 auto';
+                        actions.style.display = 'flex';
+                        actions.style.alignItems = 'center';
+                        actions.style.gap = '8px';
+
                         if (
                           typeof scheduleIdArg !== 'undefined' &&
                           scheduleIdArg !== null
                         ) {
+                          // Edit button
+                          try {
+                            const editBtn = document.createElement('button');
+                            editBtn.textContent = 'edit';
+                            editBtn.style.background = '#ffb000';
+                            editBtn.style.color = '#fff';
+                            editBtn.style.border = 'none';
+                            editBtn.style.padding = '8px 12px';
+                            editBtn.style.borderRadius = '6px';
+                            editBtn.style.cursor = 'pointer';
+                            editBtn.style.fontWeight = '600';
+                            editBtn.addEventListener('click', () => {
+                              try {
+                                if (
+                                  chrome &&
+                                  chrome.runtime &&
+                                  chrome.runtime.sendMessage
+                                ) {
+                                  chrome.runtime.sendMessage({
+                                    action: 'openOptionsPage',
+                                    editScheduleId: scheduleIdArg,
+                                  });
+                                }
+                              } catch (e) {}
+                            });
+                            actions.appendChild(editBtn);
+                          } catch (e) {}
+
                           const cancelBtn = document.createElement('button');
-                          cancelBtn.textContent = 'cancel schedule';
-                          cancelBtn.style.background = '#e53935';
-                          cancelBtn.style.border = 'none';
-                          cancelBtn.style.color = '#fff';
-                          cancelBtn.style.padding = '8px 12px';
-                          cancelBtn.style.borderRadius = '6px';
-                          cancelBtn.style.cursor = 'pointer';
-                          cancelBtn.style.fontWeight = '600';
+                          cancelBtn.className = 'openwhen-delete-btn';
+                          cancelBtn.textContent = 'delete';
 
                           cancelBtn.addEventListener('click', () => {
                             try {
-                              cancelBtn.disabled = true;
-                              window.postMessage(
-                                {
-                                  type: 'openwhen_cancel_schedule',
-                                  id: scheduleIdArg,
-                                },
-                                '*'
-                              );
-                              const onResp = (ev) => {
+                              // Hide both buttons; show undo badge
+                              const eBtn =
+                                actions.querySelector('.openwhen-edit-btn');
+                              if (eBtn) eBtn.style.display = 'none';
+                              cancelBtn.style.display = 'none';
+
+                              let undoClicked = false;
+                              let countdown = 3;
+                              const undoBadge =
+                                document.createElement('button');
+                              undoBadge.className = 'openwhen-undo-badge';
+                              undoBadge.textContent = `undo (${countdown})`;
+                              actions.appendChild(undoBadge);
+
+                              const cntdwn = setInterval(() => {
                                 try {
-                                  const d = ev && ev.data;
-                                  if (
-                                    !d ||
-                                    d.type !== 'openwhen_cancel_response' ||
-                                    String(d.id) !== String(scheduleIdArg)
-                                  )
-                                    return;
-                                  window.removeEventListener('message', onResp);
-                                  if (d.ok) {
-                                    try {
-                                      const small =
-                                        document.createElement('div');
-                                      small.className = 'openwhen-cancel-toast';
-                                      small.textContent = 'schedule cancelled';
-                                      small.style.fontSize = '12px';
-                                      small.style.color = '#fff';
-                                      small.style.padding = '8px 12px';
-                                      // Insert toast before button, then remove button
-                                      cancelBtn.parentNode.insertBefore(
-                                        small,
-                                        cancelBtn
-                                      );
-                                      cancelBtn.remove();
-                                      setTimeout(() => {
-                                        small.classList.add(
-                                          'openwhen-toast-fade'
-                                        );
-                                        setTimeout(() => small.remove(), 350);
-                                      }, 2000);
-                                    } catch (e) {}
+                                  countdown--;
+                                  if (countdown > 0) {
+                                    undoBadge.textContent = `undo (${countdown})`;
                                   } else {
-                                    try {
-                                      cancelBtn.disabled = false;
-                                    } catch (e) {}
+                                    clearInterval(cntdwn);
                                   }
                                 } catch (e) {}
-                              };
-                              window.addEventListener('message', onResp);
+                              }, 1000);
+
+                              undoBadge.addEventListener('click', () => {
+                                undoClicked = true;
+                                clearInterval(cntdwn);
+                                undoBadge.remove();
+                                if (eBtn) eBtn.style.display = '';
+                                cancelBtn.style.display = '';
+                              });
+
+                              setTimeout(() => {
+                                if (undoClicked) return;
+                                clearInterval(cntdwn);
+                                undoBadge.remove();
+                                const deletedBadge =
+                                  document.createElement('div');
+                                deletedBadge.className =
+                                  'openwhen-deleted-badge';
+                                deletedBadge.textContent = 'deleted';
+                                actions.appendChild(deletedBadge);
+
+                                // Fade badge after 2 s, then remove actions area
+                                setTimeout(() => {
+                                  try {
+                                    if (!deletedBadge.isConnected) return;
+                                    deletedBadge.style.opacity = '0';
+                                    setTimeout(() => {
+                                      try {
+                                        if (actions.isConnected) {
+                                          actions.style.transition =
+                                            'opacity 350ms ease';
+                                          actions.style.opacity = '0';
+                                          setTimeout(() => {
+                                            try {
+                                              actions.remove();
+                                            } catch (e) {}
+                                          }, 360);
+                                        }
+                                      } catch (e) {}
+                                    }, 400);
+                                  } catch (e) {}
+                                }, 2000);
+
+                                window.postMessage(
+                                  {
+                                    type: 'openwhen_cancel_schedule',
+                                    id: scheduleIdArg,
+                                  },
+                                  '*',
+                                );
+                                const onResp = (ev) => {
+                                  try {
+                                    const d = ev && ev.data;
+                                    if (
+                                      !d ||
+                                      d.type !== 'openwhen_cancel_response' ||
+                                      String(d.id) !== String(scheduleIdArg)
+                                    )
+                                      return;
+                                    window.removeEventListener(
+                                      'message',
+                                      onResp,
+                                    );
+                                    if (!d.ok) {
+                                      try {
+                                        deletedBadge.remove();
+                                      } catch (e) {}
+                                      if (eBtn) eBtn.style.display = '';
+                                      cancelBtn.style.display = '';
+                                    }
+                                  } catch (e) {}
+                                };
+                                window.addEventListener('message', onResp);
+                              }, 3000);
                             } catch (e) {}
                           });
-                          maybeCancel.appendChild(cancelBtn);
+                          actions.appendChild(cancelBtn);
                         }
 
                         const close = document.createElement('button');
@@ -2206,7 +2265,7 @@ async function openScheduleNow(s, opts) {
                                     toast.remove();
                                   } catch (e) {}
                                 },
-                                { once: true }
+                                { once: true },
                               );
                             } catch (e) {}
                             setTimeout(() => {
@@ -2223,7 +2282,7 @@ async function openScheduleNow(s, opts) {
 
                         toast.appendChild(iconWrap);
                         toast.appendChild(content);
-                        toast.appendChild(maybeCancel);
+                        toast.appendChild(actions);
                         toast.appendChild(close);
                         document.documentElement.appendChild(toast);
                       } catch (e) {}
@@ -2317,7 +2376,7 @@ async function openScheduleNow(s, opts) {
                         try {
                           const resized = await fetchAndResizeIcon(
                             changeInfo.favIconUrl,
-                            32
+                            32,
                           );
                           const useIcon = resized || changeInfo.favIconUrl;
                           try {
@@ -2332,7 +2391,7 @@ async function openScheduleNow(s, opts) {
                         try {
                           const resized = await fetchAndResizeIcon(
                             tabObj.favIconUrl,
-                            32
+                            32,
                           );
                           const useIcon = resized || tabObj.favIconUrl;
                           try {
@@ -2343,14 +2402,14 @@ async function openScheduleNow(s, opts) {
                         } catch (e) {}
                       })();
                     }
-                  }
+                  },
                 );
                 try {
                   if (t && t.favIconUrl && t.favIconUrl !== icon) {
                     (async () => {
                       const resized = await fetchAndResizeIcon(
                         t.favIconUrl,
-                        32
+                        32,
                       );
                       const useIcon = resized || t.favIconUrl;
                       try {
@@ -2376,7 +2435,7 @@ async function openScheduleNow(s, opts) {
                 extName,
                 s.url,
                 display.hasMessage,
-                false
+                false,
               );
             } catch (e) {}
           });
@@ -2413,7 +2472,7 @@ async function openScheduleNow(s, opts) {
               extName,
               s.url,
               display.hasMessage,
-              false
+              false,
             );
           } catch (e) {}
         }
@@ -2433,8 +2492,8 @@ chrome.notifications.onClicked.addListener(async (notifId) => {
       try {
         const stored = await new Promise((res) =>
           chrome.storage.local.get(['_notif_' + notifId], (r) =>
-            res((r && r['_notif_' + notifId]) || null)
-          )
+            res((r && r['_notif_' + notifId]) || null),
+          ),
         );
         if (stored) tabId = stored;
       } catch (e) {}
@@ -2466,4 +2525,26 @@ chrome.notifications.onClosed.addListener((notifId, byUser) => {
       _notifToTab.delete(notifId);
     } catch (e) {}
   } catch (e) {}
+});
+
+// Handle request to open options page with optional edit param
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg && msg.action === 'openOptionsPage') {
+    try {
+      const editId = msg.editScheduleId;
+      const url =
+        chrome.runtime.getURL('options.html') +
+        (editId ? '?edit=' + encodeURIComponent(editId) : '');
+      chrome.tabs.create({ url }, () => {
+        try {
+          sendResponse({ ok: true });
+        } catch (e) {}
+      });
+    } catch (e) {
+      try {
+        sendResponse({ ok: false, error: e.message });
+      } catch (e) {}
+    }
+    return true;
+  }
 });
