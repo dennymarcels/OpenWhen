@@ -153,9 +153,33 @@
   /* push dismiss to far right */
 }
 
+.openwhen-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 12px;
+}
+
 /* New layout helpers */
-.openwhen-cancel-btn {
-  background: #e53935;
+.openwhen-edit-btn {
+  background: #ffb000;
+  /* yellow/amber from options styles */
+  color: #fff;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  flex: 0 0 auto;
+  transition: filter 300ms ease;
+}
+
+.openwhen-edit-btn:hover {
+  filter: brightness(0.95);
+}
+
+.openwhen-delete-btn {
+  background: #ff6b6b;
   /* red */
   color: #fff;
   border: none;
@@ -167,22 +191,37 @@
   transition: background-color 300ms ease, opacity 300ms ease;
 }
 
-.openwhen-cancel-btn:hover {
+.openwhen-delete-btn:hover {
   filter: brightness(0.95)
 }
 
-/* Undo state - gray background */
-.openwhen-cancel-btn.undo {
+/* Undo badge shown while countdown is running (replaces both buttons) */
+.openwhen-undo-badge {
   background: #757575;
-  /* gray */
+  color: #fff;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
   cursor: pointer;
+  font-weight: 600;
+  flex: 0 0 auto;
+  transition: filter 200ms ease;
 }
 
-/* Cancelled state - green background */
-.openwhen-cancel-btn.cancelled {
-  background: #4caf50;
-  /* green */
-  cursor: default;
+.openwhen-undo-badge:hover {
+  filter: brightness(1.15);
+}
+
+/* "deleted" badge shown after successful deletion */
+.openwhen-deleted-badge {
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  flex: 0 0 auto;
+  transition: opacity 350ms ease;
 }
 
 /* set a CSS variable to allow pages that opt-in to reserve space */
@@ -198,8 +237,8 @@
   pointer-events: none;
 }
 
-/* Small transient toast shown after Cancel action (keeps banner visible) */
-.openwhen-cancel-toast {
+/* Small transient toast shown after Delete action (keeps banner visible) */
+.openwhen-delete-toast {
   display: inline-block;
   background: rgba(0, 0, 0, 0.6);
   color: #fff;
@@ -211,7 +250,7 @@
   transition: opacity 300ms ease, transform 300ms ease;
 }
 
-.openwhen-cancel-toast.openwhen-toast-fade {
+.openwhen-delete-toast.openwhen-toast-fade {
   opacity: 0;
   transform: translateY(-6px);
 }

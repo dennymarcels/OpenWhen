@@ -181,7 +181,11 @@
       </div>
 
       <div id="recurringFields" hidden>
-        <label>time
+        <div id="dailyTimesFields" hidden>
+          <div id="dailyTimesList"></div>
+          <button type="button" id="addDailyTimeBtn" class="secondary-btn add-time-btn">+ add time</button>
+        </div>
+        <label id="singleTimeLabel">time
           <input type="time" id="time">
         </label>
         <label id="stopAfterLabel">stop after

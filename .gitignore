@@ -40,3 +40,6 @@ yarn-error.log*
 
 # Design system (temporary)
 design-system/
+
+# Extensions
+.history/
